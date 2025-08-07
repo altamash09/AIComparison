@@ -1,0 +1,82 @@
+# ================================
+# Node.js (backend)
+# ================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnpm-debug.log*
+
+# Environment variables
+.env
+.env.*
+
+
+# Logs
+logs/
+*.log
+*.out
+*.pid
+
+# Runtime
+pids/
+*.seed
+*.pid.lock
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# PM2 logs
+pids/
+*.log
+
+# ================================
+# React (frontend)
+# ================================
+**/node_modules/
+**/build/
+**/dist/
+**/.next/
+**/.turbo/
+
+# Cache
+.cache/
+.next/
+.vite/
+*.tsbuildinfo
+
+# React environment files
+.env.development
+.env.production
+.env.local
+.env.test
+
+# React testing
+coverage/
+jest.config.js
+
+# ================================
+# Editor & IDEs
+# ================================
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Misc
+*.tgz
+*.log
+*.bak
+*.swp
+*.tmp
+
+# ESLint / Prettier / TypeScript
+.eslintcache
+.prettiercache
+tsconfig.tsbuildinfo
