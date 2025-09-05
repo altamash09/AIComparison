@@ -23,15 +23,111 @@ const ActivityMonitoringUtility = () => {
     startTime: null
   });
 
-  // Pagination states - SIMPLIFIED
-  const [matchesPagination, setMatchesPagination] = useState({ currentPage: 1, itemsPerPage: 10 });
-  const [unmatchesPagination, setUnmatchesPagination] = useState({ currentPage: 1, itemsPerPage: 10 });
+  // Tab state
+  const [activeTab, setActiveTab] = useState('matches');
 
-  // API Configuration - Update this URL for your environment
+  // Image popup state with camera selector
+  const [imagePopup, setImagePopup] = useState({
+    isOpen: false,
+    imagePath: '',
+    timestamp: '',
+    camera: '',
+    activity: '',
+    selectedCamera: '',
+    originalCamera: '',
+    baseData: null
+  });
+
+  // Pagination states for each table
+  const [matchesPagination, setMatchesPagination] = useState({ currentPage: 1, itemsPerPage: 10 });
+  const [dbActivitiesPagination, setDbActivitiesPagination] = useState({ currentPage: 1, itemsPerPage: 10 });
+  const [jsonActivitiesPagination, setJsonActivitiesPagination] = useState({ currentPage: 1, itemsPerPage: 10 });
+
+  // API Configuration
   const API_BASE_URL = 'http://10.144.69.61:3901/api';
+
+  // All helper functions defined immediately after state
+  const getFilteredJsonActivitiesCount = useCallback(() => {
+    if (!comparisonResults?.allJsonActivities) return 0;
   
-  // For production, change the above line to:
-  // const API_BASE_URL = 'https://your-domain.com/api';
+    return comparisonResults.allJsonActivities
+      .filter(activity => 
+        activity.isMapped && 
+        activity.activityId && 
+        !['person-employee', 'person-customer'].includes(activity.label)
+      )
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)) // ascending order
+      .length;
+  }, [comparisonResults?.allJsonActivities]);
+
+  const getFilteredJsonActivities = useCallback(() => {
+    if (!comparisonResults?.allJsonActivities) return [];
+  
+    return comparisonResults.allJsonActivities
+      .filter(activity =>
+        activity.isMapped &&
+        activity.activityId &&
+        !['person-employee', 'person-customer'].includes(activity.label)
+      )
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)); // ascending
+  }, [comparisonResults?.allJsonActivities]);
+
+  const calculateJsonActivityCount = useCallback((jsonData) => {
+    if (!jsonData || !Array.isArray(jsonData)) return 0;
+    
+    let activityCount = 0;
+    const ignoredLabels = ['person-employee', 'person-customer'];
+    
+    jsonData.forEach(record => {
+      if (record.bounds && Array.isArray(record.bounds)) {
+        record.bounds.forEach(bound => {
+          if (bound.label && !ignoredLabels.includes(bound.label)) {
+            activityCount++;
+          }
+        });
+      }
+    });
+    
+    return activityCount;
+  }, []);
+
+  // Helper functions defined early to avoid undefined errors
+  const formatTimestamp = (timestamp) => {
+    try {
+      // Handle different timestamp formats without timezone conversion
+      if (!timestamp) return 'N/A';
+      
+      // If it's already in a good format (YYYY-MM-DD HH:mm:ss), clean and return
+      if (typeof timestamp === 'string' && timestamp.match(/^\d{4}-\d{2}-\d{2}/)) {
+        // Remove milliseconds and clean up the format
+        return timestamp.replace(/\.\d{3}$/, '').replace('T', ' ');
+      }
+      
+      // For other formats, parse but format back to database-like format
+      const date = new Date(timestamp);
+      if (isNaN(date.getUTCTime())) return timestamp; // Return original if invalid
+      
+      // Format as YYYY-MM-DD HH:mm:ss (same as database format)
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(date.getUTCDate()).padStart(2, '0');
+      const hours = String(date.getUTCHours()).padStart(2, '0');
+      const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+      
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    } catch (error) {
+      console.warn('Error formatting timestamp:', timestamp, error);
+      return timestamp; // Return original if there's an error
+    }
+  };
+
+  const formatConfidence = (confidence) => {
+    if (typeof confidence !== 'number') return { percentage: '0.0', level: 'low' };
+    const percentage = (confidence * 100).toFixed(1);
+    const level = confidence > 0.8 ? 'high' : confidence > 0.5 ? 'medium' : 'low';
+    return { percentage, level };
+  };
 
   const loadActivities = useCallback(async () => {
     setIsLoadingActivities(true);
@@ -47,26 +143,17 @@ const ActivityMonitoringUtility = () => {
         }
       });
       
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response headers:', response.headers.get('content-type'));
-      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Non-200 response:', errorText);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       
-      // Check if response is actually JSON
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const responseText = await response.text();
-        console.error('❌ Expected JSON but got:', contentType);
-        console.error('❌ Response body:', responseText.substring(0, 200));
-        throw new Error(`Expected JSON but received ${contentType || 'unknown content type'}. Check if backend is running on port 3001.`);
+        throw new Error(`Expected JSON but received ${contentType || 'unknown content type'}. Check if backend is running.`);
       }
       
       const data = await response.json();
-      console.log('📊 Received data:', data);
       
       if (!data.success) {
         throw new Error(data.message || 'Failed to load activities');
@@ -78,15 +165,10 @@ const ActivityMonitoringUtility = () => {
     } catch (error) {
       console.error('❌ Error loading activities:', error);
       
-      // Provide specific error messages
       let errorMessage = 'Failed to load activities from database: ';
       
       if (error.message.includes('fetch')) {
-        errorMessage += 'Cannot connect to backend server. Make sure backend is running on port 3001.';
-      } else if (error.message.includes('JSON')) {
-        errorMessage += 'Backend returned HTML instead of JSON. Check backend server logs for errors.';
-      } else if (error.message.includes('content type')) {
-        errorMessage += error.message;
+        errorMessage += 'Cannot connect to backend server. Make sure backend is running.';
       } else {
         errorMessage += error.message;
       }
@@ -98,35 +180,31 @@ const ActivityMonitoringUtility = () => {
     }
   }, [API_BASE_URL]);
 
-  // Load activities from database on component mount
   useEffect(() => {
     loadActivities();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Remove loadActivities from dependency array to avoid initialization error
+  }, [loadActivities]);
 
   const handleFileUpload = useCallback((event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    // Reset previous state
     setError(null);
     setUploadProgress(0);
     setComparisonResults(null);
     
-    // Reset pagination when new file is uploaded
+    // Reset pagination
     setMatchesPagination({ currentPage: 1, itemsPerPage: 10 });
-    setUnmatchesPagination({ currentPage: 1, itemsPerPage: 10 });
+    setDbActivitiesPagination({ currentPage: 1, itemsPerPage: 10 });
+    setJsonActivitiesPagination({ currentPage: 1, itemsPerPage: 10 });
 
-    // Validate file type
     if (!file.name.toLowerCase().endsWith('.json')) {
       setError('Please select a valid JSON file (.json extension required)');
       return;
     }
 
-    // Validate file size (max 100MB)
     const maxSize = 100 * 1024 * 1024; // 100MB
     if (file.size > maxSize) {
-      setError(`File size (${(file.size / 1024 / 1024).toFixed(1)}MB) exceeds maximum limit of 100MB`);
+      setError(`File size exceeds maximum limit of 100MB`);
       return;
     }
 
@@ -134,86 +212,40 @@ const ActivityMonitoringUtility = () => {
     
     reader.onprogress = (e) => {
       if (e.lengthComputable) {
-        const progress = (e.loaded / e.total) * 100;
-        setUploadProgress(Math.round(progress));
+        setUploadProgress(Math.round((e.loaded / e.total) * 100));
       }
     };
 
     reader.onload = (e) => {
       try {
-        const jsonContent = e.target.result;
-        let data;
+        const data = JSON.parse(e.target.result);
         
-        try {
-          data = JSON.parse(jsonContent);
-        } catch (parseError) {
-          throw new Error(`Invalid JSON format: ${parseError.message}`);
-        }
-        
-        // Validate JSON structure
-        if (!Array.isArray(data)) {
+        if (!Array.isArray(data) || data.length === 0) {
           throw new Error('JSON file must contain an array of monitoring records');
         }
 
-        if (data.length === 0) {
-          throw new Error('JSON file contains no records');
-        }
-
-        // Validate required fields in sample records
-        const sampleSize = Math.min(3, data.length);
+        // Validate required fields
         const requiredFields = ['company', 'store', 'date', 'camera', 'timestamp', 'image', 'bounds'];
-        
-        for (let i = 0; i < sampleSize; i++) {
-          const record = data[i];
-          const missingFields = requiredFields.filter(field => !(field in record));
-          
-          if (missingFields.length > 0) {
-            throw new Error(`Record ${i + 1} missing required fields: ${missingFields.join(', ')}`);
-          }
-        }
-
-        // Validate data consistency
         const firstRecord = data[0];
-        const inconsistentRecords = data.filter(record => 
-          record.company !== firstRecord.company || 
-          record.store !== firstRecord.store ||
-          record.date !== firstRecord.date
-        );
+        const missingFields = requiredFields.filter(field => !(field in firstRecord));
         
-        if (inconsistentRecords.length > 0) {
-          console.warn(`⚠️ Found ${inconsistentRecords.length} records with different company/store/date`);
+        if (missingFields.length > 0) {
+          throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
         }
 
         setJsonData(data);
         setUploadProgress(100);
         
-        // Extract activities count from JSON
-        const activitiesFound = data.reduce((count, record) => {
-          if (record.bounds && Array.isArray(record.bounds)) {
-            return count + record.bounds.length;
-          }
-          return count;
-        }, 0);
-        
         console.log(`📊 JSON Analysis:
           - Total records: ${data.length}
-          - Activities detected: ${activitiesFound}
           - Store: ${firstRecord.store}
           - Company: ${firstRecord.company}
-          - Date: ${firstRecord.date}
-          - Time range: ${data[0]?.timestamp} to ${data[data.length - 1]?.timestamp}`);
+          - Date: ${firstRecord.date}`);
         
       } catch (error) {
-        console.error('❌ JSON Processing Error:', error);
         setError(`JSON file processing failed: ${error.message}`);
         setJsonData([]);
-        setUploadProgress(0);
       }
-    };
-
-    reader.onerror = () => {
-      setError('Failed to read the file. Please try again.');
-      setUploadProgress(0);
     };
 
     reader.readAsText(file);
@@ -233,20 +265,11 @@ const ActivityMonitoringUtility = () => {
     setIsProcessing(true);
     setError(null);
     
-    // Initialize progress tracking
-    const steps = [
-      'Preparing data structures...',
-      'Extracting JSON activities...',
-      'Performing focused comparison (matches vs unmatches)...',
-      'Calculating detection accuracy...',
-      'Generating simplified report...'
-    ];
-    
     setProcessingProgress({
       show: true,
       percentage: 0,
-      currentStep: steps[0],
-      totalSteps: steps.length,
+      currentStep: 'Preparing data structures...',
+      totalSteps: 4,
       currentStepIndex: 0,
       estimatedTimeRemaining: 0,
       startTime: Date.now()
@@ -255,313 +278,69 @@ const ActivityMonitoringUtility = () => {
     try {
       console.log('🔄 Starting comparison process...');
       
-      // Step 1: Prepare data
-      await updateProgress(0, steps[0], steps.length);
-      
-      // Prepare form data for backend
       const formData = new FormData();
       const jsonBlob = new Blob([JSON.stringify(jsonData)], { type: 'application/json' });
       formData.append('jsonFile', jsonBlob, `monitoring-data-${Date.now()}.json`);
       
-      // Add metadata
       const firstRecord = jsonData[0];
       formData.append('storeId', firstRecord.store?.toString() || '');
       formData.append('companyId', firstRecord.company?.toString() || '');
       formData.append('monitoringDate', firstRecord.date || '');
 
-      console.log(`📤 Sending data to backend:
-        - Store ID: ${firstRecord.store}
-        - Company ID: ${firstRecord.company}
-        - Date: ${firstRecord.date}
-        - Records: ${jsonData.length}`);
+      // Simulate progress updates
+      const steps = [
+        'Preparing data structures...',
+        'Extracting JSON activities...',
+        'Comparing with database...',
+        'Generating results...'
+      ];
 
-      // Step 2: Upload starting
-      await updateProgress(1, steps[1], steps.length);
-
-      // Check if backend supports progress tracking
-      const supportsProgress = false; // Using simulated progress to show individual activities immediately
-      
-      if (supportsProgress) {
-        // Method 1: Backend with progress support
-        await processWithBackendProgress(formData, steps);
-      } else {
-        // Method 2: Simulated progress
-        await processWithSimulatedProgress(formData, steps);
+      for (let i = 0; i < steps.length - 1; i++) {
+        setProcessingProgress(prev => ({
+          ...prev,
+          percentage: Math.round((i / steps.length) * 100),
+          currentStep: steps[i],
+          currentStepIndex: i
+        }));
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
+
+      const response = await fetch(`${API_BASE_URL}/monitoring/compare`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const responseData = await response.json();
+
+      if (!response.ok || !responseData.success) {
+        throw new Error(responseData.message || 'Comparison processing failed');
+      }
+
+      console.log('✅ Comparison completed:', responseData.data);
+      setComparisonResults(responseData.data);
+      
+      // Reset pagination
+      setMatchesPagination({ currentPage: 1, itemsPerPage: 10 });
+      setDbActivitiesPagination({ currentPage: 1, itemsPerPage: 10 });
+      setJsonActivitiesPagination({ currentPage: 1, itemsPerPage: 10 });
+      
+      setProcessingProgress(prev => ({
+        ...prev,
+        percentage: 100,
+        currentStep: 'Comparison completed successfully!',
+        currentStepIndex: steps.length - 1
+      }));
+      
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
     } catch (error) {
       console.error('❌ Comparison Error:', error);
-      
-      // Provide more specific error messages
-      let errorMessage = 'Processing failed: ';
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        errorMessage += 'Unable to connect to server. Please check if the backend is running.';
-      } else if (error.message.includes('404')) {
-        errorMessage += 'API endpoint not found. Please check your server configuration.';
-      } else if (error.message.includes('500')) {
-        errorMessage += 'Server internal error. Please check server logs.';
-      } else {
-        errorMessage += error.message;
-      }
-      
-      setError(errorMessage);
+      setError(`Processing failed: ${error.message}`);
     } finally {
       setIsProcessing(false);
       setProcessingProgress(prev => ({ ...prev, show: false }));
     }
   }, [jsonData, activities, API_BASE_URL]);
-
-  // Helper function to update progress
-  const updateProgress = useCallback(async (stepIndex, stepName, totalSteps) => {
-    const percentage = Math.round((stepIndex / totalSteps) * 100);
-    const startTime = processingProgress.startTime || Date.now();
-    const elapsed = Date.now() - startTime;
-    const estimatedTotal = elapsed / (stepIndex + 1) * totalSteps;
-    const remaining = Math.max(0, Math.round((estimatedTotal - elapsed) / 1000));
-    
-    setProcessingProgress(prev => ({
-      ...prev,
-      percentage,
-      currentStep: stepName,
-      currentStepIndex: stepIndex,
-      estimatedTimeRemaining: remaining,
-      startTime: prev.startTime || Date.now()
-    }));
-    
-    // Small delay to show progress visually
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }, [processingProgress.startTime]);
-
-  // Method 1: Process with backend progress support (if your backend supports it)
-  const processWithBackendProgress = useCallback(async (formData, steps) => {
-    // Generate unique process ID
-    const processId = `comparison_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    formData.append('processId', processId);
-    
-    console.log(`🚀 Starting backend comparison with process ID: ${processId}`);
-    
-    // Start the processing (non-blocking)
-    const processPromise = fetch(`${API_BASE_URL}/monitoring/compare`, {
-      method: 'POST',
-      body: formData,
-    }).then(response => response.json());
-    
-    // Poll for progress every 500ms
-    const progressPolling = setInterval(async () => {
-      try {
-        const progressResponse = await fetch(`${API_BASE_URL}/monitoring/progress/${processId}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (progressResponse.ok) {
-          const progressData = await progressResponse.json();
-          
-          if (progressData.success && progressData.progress) {
-            const progress = progressData.progress;
-            
-            // Calculate estimated time remaining
-            const elapsed = Date.now() - (processingProgress.startTime || Date.now());
-            const estimatedTotal = progress.percentage > 0 ? (elapsed / progress.percentage) * 100 : 0;
-            const remaining = Math.max(0, Math.round((estimatedTotal - elapsed) / 1000));
-            
-            setProcessingProgress(prev => ({
-              ...prev,
-              percentage: progress.percentage || prev.percentage,
-              currentStep: progress.currentStep || prev.currentStep,
-              currentStepIndex: progress.stepIndex || prev.currentStepIndex,
-              estimatedTimeRemaining: remaining
-            }));
-            
-            console.log(`📊 Real Progress Update: ${progress.percentage}% - ${progress.currentStep}`);
-          }
-        } else {
-          console.log('📡 Progress endpoint not available, backend may not support progress tracking');
-        }
-      } catch (progressError) {
-        console.log('📡 Progress polling failed:', progressError.message);
-      }
-    }, 300); // Poll every 300ms for faster updates
-    
-    try {
-      // Wait for the actual processing to complete
-      const responseData = await processPromise;
-      clearInterval(progressPolling);
-      
-      if (!responseData.success) {
-        throw new Error(responseData.message || 'Comparison processing failed');
-      }
-
-      console.log('✅ Comparison completed successfully:', responseData.data);
-      setComparisonResults(responseData.data);
-    
-    // Reset pagination when new results are loaded
-    setMatchesPagination({ currentPage: 1, itemsPerPage: 10 });
-    setUnmatchesPagination({ currentPage: 1, itemsPerPage: 10 });
-      
-      // Reset pagination when new results are loaded
-      setMatchesPagination({ currentPage: 1, itemsPerPage: 10 });
-      setUnmatchesPagination({ currentPage: 1, itemsPerPage: 10 });
-      
-      // Show completion
-      setProcessingProgress(prev => ({
-        ...prev,
-        percentage: 100,
-        currentStep: 'Comparison completed successfully!',
-        currentStepIndex: steps.length - 1,
-        estimatedTimeRemaining: 0
-      }));
-      
-      // Keep the success message visible for 2 seconds
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-    } catch (error) {
-      clearInterval(progressPolling);
-      throw error;
-    }
-  }, [API_BASE_URL, processingProgress.startTime]);
-
-  // Method 2: Optimized simulated progress for ultra-fast processing
-  const processWithSimulatedProgress = useCallback(async (formData, steps) => {
-    // Calculate total activities to process
-    const totalJsonRecords = jsonData.length;
-    const totalDbActivities = activities.length;
-    
-    // Extract activities from JSON data for realistic progress
-    const jsonActivities = [];
-    jsonData.forEach(record => {
-      if (record.bounds && Array.isArray(record.bounds)) {
-        record.bounds.forEach(bound => {
-          if (bound.label) {
-            jsonActivities.push({
-              name: bound.label === 'person-employee' ? 'Employee Activity' : 
-                    bound.label === 'person-customer' ? 'Customer Activity' : bound.label,
-              timestamp: record.timestamp,
-              camera: record.camera
-            });
-          }
-        });
-      }
-    });
-
-    const totalActivitiesToProcess = jsonActivities.length;
-    console.log(`⚡ Processing: ${totalActivitiesToProcess} activities from ${totalJsonRecords} records`);
-
-    // Start the actual backend request (this should be FAST now)
-    const backendPromise = fetch(`${API_BASE_URL}/monitoring/compare`, {
-      method: 'POST',
-      body: formData,
-    }).then(response => response.json());
-
-    // ULTRA-FAST progress simulation (no artificial delays)
-    const activityNames = ['Sales Desk', 'Stretching', 'Cleaning', 'Making Calls', 'Intake', 'Customer Service', 'Stock Check', 'Register Operation'];
-    
-    // Step 1: Data preparation (instant)
-    setProcessingProgress(prev => ({
-      ...prev,
-      percentage: 10,
-      currentStep: `Preparing data structures for ${totalActivitiesToProcess} activities...`,
-      currentStepIndex: 0,
-      estimatedTimeRemaining: 2
-    }));
-
-    // Small delay to show the step
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Step 2: Ultra-fast JSON processing
-    setProcessingProgress(prev => ({
-      ...prev,
-      percentage: 30,
-      currentStep: `Extraction from ${totalJsonRecords} JSON records...`,
-      currentStepIndex: 1,
-      estimatedTimeRemaining: 1
-    }));
-
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    // Step 3: Ultra-fast comparison (this is where the real magic happens)
-    let currentActivity = 0;
-    const batchSize = Math.max(1, Math.floor(totalActivitiesToProcess / 20)); // Process in batches for smooth UI
-
-    for (let batch = 0; batch < Math.min(20, totalActivitiesToProcess); batch++) {
-      currentActivity += batchSize;
-      const percentage = 30 + Math.round((batch / 20) * 50); // 30% to 80%
-      const activityName = activityNames[Math.floor(Math.random() * activityNames.length)];
-      
-      setProcessingProgress(prev => ({
-        ...prev,
-        percentage,
-        currentStep:       `Focused comparison: ${totalActivitiesToProcess} activities vs database...`,
-        currentStepIndex: 2,
-        estimatedTimeRemaining: Math.max(0, 1 - (batch / 20))
-      }));
-      
-      // NO ARTIFICIAL DELAYS - just quick UI updates
-      await new Promise(resolve => setTimeout(resolve, 25)); // Minimal delay for smooth UI
-    }
-
-    // Step 4: Finalizing
-    setProcessingProgress(prev => ({
-      ...prev,
-      percentage: 90,
-      currentStep: 'Generating results and accuracy metrics...',
-      currentStepIndex: 3,
-      estimatedTimeRemaining: 0
-    }));
-
-    console.log(`⚡ Waiting for backend processing...`);
-
-    // Wait for actual backend processing (should be FAST now)
-    let responseData;
-    try {
-      responseData = await backendPromise;
-    } catch (jsonError) {
-      throw new Error(`Invalid response from server: ${jsonError.message}`);
-    }
-
-    if (!responseData.success) {
-      throw new Error(responseData.message || 'Comparison processing failed');
-    }
-
-    console.log('⚡ Comparison completed:', responseData.data);
-    
-    // DEBUG: Log the actual structure we received
-    console.log('🔍 DEBUG - Response structure:', {
-      success: responseData.success,
-      dataKeys: Object.keys(responseData.data || {}),
-      rawData: responseData.data
-    });
-    
-    // Log performance metrics if available
-    if (responseData.data.performanceMetrics) {
-      const metrics = responseData.data.performanceMetrics;
-      console.log(`📊 PERFORMANCE METRICS:
-        - Total time: ${metrics.totalProcessingTimeMs}ms
-        - Activities/sec: ${metrics.activitiesProcessedPerSecond?.toLocaleString()}`);
-    }
-    
-    setComparisonResults(responseData.data);
-    
-    // Reset pagination when new results are loaded
-    setMatchesPagination({ currentPage: 1, itemsPerPage: 10 });
-    setUnmatchesPagination({ currentPage: 1, itemsPerPage: 10 });
-    
-    // Complete progress
-    setProcessingProgress(prev => ({
-      ...prev,
-      percentage: 100,
-      currentStep: `⚡ FOCUSED Complete! ${responseData.data.matchedCount || responseData.data.matches?.length || 0} accurate detections, ${responseData.data.unmatchedCount || responseData.data.unmatches?.length || 0} missed by AI (${responseData.data.accuracyPercentage || 0}% accuracy)`,
-      currentStepIndex: 4,
-      estimatedTimeRemaining: 0
-    }));
-    
-    console.log(`⚡ Processing completed!`);
-    
-    // Keep success message visible for 2 seconds
-    await new Promise(resolve => setTimeout(resolve, 2000));
-  }, [API_BASE_URL, jsonData, activities]);
 
   const downloadReport = useCallback(() => {
     if (!comparisonResults) {
@@ -576,24 +355,21 @@ const ActivityMonitoringUtility = () => {
           storeId: jsonData[0]?.store,
           companyId: jsonData[0]?.company,
           monitoringDate: jsonData[0]?.date,
-          totalRecordsProcessed: jsonData.length,
-          systemVersion: '1.0.0'
+          totalRecordsProcessed: jsonData.length
         },
         summary: {
-          overallAccuracy: comparisonResults.overallAccuracy,
-          totalMatches: comparisonResults.totalMatches,
-          totalJsonActivities: comparisonResults.totalJsonActivities,
+          accuracyPercentage: comparisonResults.accuracyPercentage,
+          totalMatches: comparisonResults.matchedCount,
           totalDbActivities: comparisonResults.totalDbActivities,
-          jsonMissedCount: comparisonResults.jsonMissed?.length || 0,
-          dbMissedCount: comparisonResults.dbMissed?.length || 0,
-          processingTime: comparisonResults.processingTime
+          totalJsonActivities: comparisonResults.totalJsonActivities
         },
         results: {
           matches: comparisonResults.matches || [],
-          jsonMissed: comparisonResults.jsonMissed || [],
-          dbMissed: comparisonResults.dbMissed || []
-        },
-        activityAccuracy: comparisonResults.activityAccuracy || {}
+          unmatchedDb: comparisonResults.unmatchedDb || [],
+          unmatchedJson: comparisonResults.unmatchedJson || [],
+          allDbActivities: comparisonResults.allDbActivities || [],
+          allJsonActivities: comparisonResults.allJsonActivities || []
+        }
       };
 
       const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
@@ -602,7 +378,7 @@ const ActivityMonitoringUtility = () => {
       a.href = url;
       
       const timestamp = new Date().toISOString().split('T')[0];
-      const filename = `activity-comparison-report-store${jsonData[0]?.store}-${timestamp}.json`;
+      const filename = `activity-comparison-report-${timestamp}.json`;
       a.download = filename;
       
       document.body.appendChild(a);
@@ -610,31 +386,151 @@ const ActivityMonitoringUtility = () => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      console.log(`📥 Report downloaded: ${filename}`);
-      
     } catch (error) {
-      console.error('❌ Download Error:', error);
       setError(`Failed to download report: ${error.message}`);
     }
   }, [comparisonResults, jsonData]);
 
-  const retryOperation = useCallback(() => {
-    setError(null);
-    if (activities.length === 0) {
-      loadActivities();
-    }
-  }, [activities.length, loadActivities]);
-
-  // Pagination helper functions
+  // Helper functions for pagination
   const getPaginatedData = useCallback((data, currentPage, itemsPerPage) => {
     if (!data || !Array.isArray(data)) return [];
     const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return data.slice(startIndex, endIndex);
+    return data.slice(startIndex, startIndex + itemsPerPage);
   }, []);
 
   const getTotalPages = useCallback((dataLength, itemsPerPage) => {
     return Math.ceil(dataLength / itemsPerPage);
+  }, []);
+
+  const constructImagePath = useCallback((data) => {
+    try {
+      // Extract info from the data
+      const storeId = data.storeId || jsonData[0]?.store || comparisonResults?.metadata?.storeId;
+      const timestamp = data.timestamp;
+      const camera = data.camera;
+      
+      if (!storeId || !timestamp || !camera) {
+        console.warn('Missing data for image path construction:', { storeId, timestamp, camera });
+        return null;
+      }
+
+      let ts = timestamp;
+      if (ts.includes("T")) {
+        ts = ts.replace("T", " "); // Replace T with space
+      }
+      ts = ts.split(/[+Z]/)[0]; // Remove timezone offset or Z if present
+  
+      // Now ts is like "2025-08-06 08:27:00"
+      const businessDate = ts.substring(0, 10).replace(/-/g, ""); // YYYYMMDD
+      const timeStamp =
+        businessDate +
+        "_" +
+        ts.substring(11, 19).replace(/:/g, ""); // HHMMSS
+
+      // Construct the UNC path - use forward slashes internally
+      const networkPath = `//10.144.70.130/e/DVR Bot/288/${storeId}/${businessDate}/${camera}/${timeStamp}.jpg`;
+      
+      // For display purposes, show the Windows UNC format
+      const displayPath = `\\\\10.144.70.130\\e\\DVR Bot\\288\\${storeId}\\${businessDate}\\${camera}\\${timeStamp}.jpg`;
+      
+      // Backend API endpoint - properly encode the path
+      const apiImagePath = `${API_BASE_URL}/image?path=${encodeURIComponent(networkPath)}`;
+      
+      console.log('🖼️ Image path constructed:', {
+        networkPath,
+        displayPath,
+        apiImagePath,
+        storeId,
+        businessDate,
+        camera,
+        timeStamp
+      });
+      
+      return {
+        originalPath: displayPath,
+        httpPath: apiImagePath,
+        displayPath: displayPath,
+        apiEndpoint: apiImagePath,
+        networkPath: networkPath
+      };
+    } catch (error) {
+      console.error('Error constructing image path:', error);
+      return null;
+    }
+  }, [jsonData, comparisonResults, API_BASE_URL]);
+
+  // Handle camera icon click
+  const handleCameraClick = useCallback((data) => {
+    const imagePathInfo = constructImagePath(data);
+
+    if (imagePathInfo) {
+      setImagePopup({
+        isOpen: true,
+        imagePath: imagePathInfo.httpPath,
+        originalPath: imagePathInfo.originalPath,
+        displayPath: imagePathInfo.displayPath,
+        timestamp: data.timestamp,
+        camera: data.camera,
+        activity: data.activityName || data.ActivityName,
+        selectedCamera: data.camera,
+        originalCamera: data.camera,
+        baseData: data
+      });
+    } else {
+      // Show error if path construction failed
+      setImagePopup({
+        isOpen: true,
+        imagePath: '',
+        originalPath: '',
+        displayPath: 'Error: Could not construct image path',
+        timestamp: data.timestamp,
+        camera: data.camera,
+        activity: data.activityName || data.ActivityName,
+        selectedCamera: data.camera,
+        originalCamera: data.camera,
+        baseData: data
+      });
+    }
+  }, [constructImagePath]);
+
+  // Handle camera number selection
+  const handleCameraNumberSelect = useCallback((cameraNumber) => {
+    if (!imagePopup.baseData) return;
+
+    // Create new data object with selected camera
+    const newData = {
+      ...imagePopup.baseData,
+      camera: cameraNumber.toString()
+    };
+
+    // Construct new image path
+    const imagePathInfo = constructImagePath(newData);
+
+    if (imagePathInfo) {
+      setImagePopup(prev => ({
+        ...prev,
+        selectedCamera: cameraNumber.toString(),
+        imagePath: imagePathInfo.httpPath,
+        originalPath: imagePathInfo.originalPath,
+        displayPath: imagePathInfo.displayPath
+      }));
+    }
+  }, [imagePopup.baseData, constructImagePath]);
+
+  // Close image popup
+  const closeImagePopup = useCallback(() => {
+    setImagePopup({
+      isOpen: false,
+      imagePath: '',
+      originalPath: '',
+      displayPath: '',
+      timestamp: '',
+      camera: '',
+      activity: '',
+      selectedCamera: '',
+      originalCamera: '',
+      baseData: null
+    });
   }, []);
 
   // Pagination component
@@ -647,7 +543,6 @@ const ActivityMonitoringUtility = () => {
 
     return (
       <div className="flex items-center justify-between mt-6 px-4 py-3 bg-white border-t border-gray-200">
-        {/* Left side - Results info */}
         <div className="flex items-center space-x-4">
           <p className="text-sm text-gray-700">
             Showing <span className="font-medium">{startItem}</span> to <span className="font-medium">{endItem}</span> of{' '}
@@ -656,103 +551,188 @@ const ActivityMonitoringUtility = () => {
           <select
             value={itemsPerPage}
             onChange={(e) => onItemsPerPageChange(parseInt(e.target.value))}
-            className="text-sm border-gray-300 rounded-md"
+            className="text-sm border-gray-300 rounded-md px-2 py-1"
           >
             <option value={5}>5 per page</option>
             <option value={10}>10 per page</option>
             <option value={25}>25 per page</option>
             <option value={50}>50 per page</option>
-            <option value={100}>100 per page</option>
           </select>
         </div>
 
-        {/* Right side - Navigation */}
         <div className="flex items-center space-x-2">
           <button
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage <= 1}
-            className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1 border border-gray-300 rounded-md bg-white text-sm disabled:opacity-50"
           >
-            <ChevronLeft className="h-5 w-5" />
+            <ChevronLeft className="h-4 w-4" />
           </button>
-
-          {/* Page numbers */}
-          {Array.from({ length: totalPages }, (_, i) => i + 1)
-            .filter(page => {
-              if (totalPages <= 7) return true;
-              if (page === 1 || page === totalPages) return true;
-              if (page >= currentPage - 1 && page <= currentPage + 1) return true;
-              return false;
-            })
-            .map((page, index, array) => {
-              const showEllipsis = index > 0 && page - array[index - 1] > 1;
-              
-              return (
-                <React.Fragment key={page}>
-                  {showEllipsis && (
-                    <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                      ...
-                    </span>
-                  )}
-                  <button
-                    onClick={() => onPageChange(page)}
-                    className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                      page === currentPage
-                        ? 'z-10 bg-blue-50 border-blue-500 text-blue-600'
-                        : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                </React.Fragment>
-              );
-            })}
-
+          
+          <span className="text-sm text-gray-700">
+            Page {currentPage} of {totalPages}
+          </span>
+          
           <button
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= totalPages}
-            className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-1 border border-gray-300 rounded-md bg-white text-sm disabled:opacity-50"
           >
-            <ChevronRight className="h-5 w-5" />
+            <ChevronRight className="h-4 w-4" />
           </button>
         </div>
       </div>
     );
   };
 
-  // Chart data preparation - SIMPLIFIED
-  const chartData = comparisonResults ? [
-    { name: 'Accurate Detections', value: comparisonResults.matchedCount || comparisonResults.matches?.length || 0, color: '#10B981' },
-    { name: 'Missed by AI', value: comparisonResults.unmatchedCount || comparisonResults.unmatches?.length || 0, color: '#EF4444' }
-  ] : [];
+  // Image Popup Modal Component with Camera Selector
+  const ImagePopupModal = () => {
+    if (!imagePopup.isOpen) return null;
 
-  const activityAccuracyData = comparisonResults?.matches ? 
-    // Group matches by activity type for accuracy chart
-    Object.entries(
-      comparisonResults.matches.reduce((acc, match) => {
-        acc[match.activityName] = (acc[match.activityName] || 0) + 1;
-        return acc;
-      }, {})
-    ).map(([name, count]) => ({
-      name: name.length > 15 ? name.substring(0, 15) + '...' : name,
-      fullName: name,
-      count: count
-    })) : [];
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+        <div 
+          className="relative max-w-2xl max-h-screen p-4 rounded-lg"
+          style={{ backgroundColor: '#ffffff' }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4 p-4 border-b">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {imagePopup.activity} - Camera {imagePopup.selectedCamera}
+              </h3>
+              <p className="text-sm text-gray-600">{formatTimestamp(imagePopup.timestamp)}</p>
+            </div>
+            <button
+              onClick={closeImagePopup}
+              className="popup-close-button"
+              title="Close"
+            >
+              <XCircle className="popup-close-icon" />
+            </button>
+          </div>
 
-  const formatConfidence = (confidence) => {
-    if (typeof confidence !== 'number') return { percentage: '0.0', level: 'low' };
-    const percentage = (confidence * 100).toFixed(1);
-    const level = confidence > 0.8 ? 'high' : confidence > 0.5 ? 'medium' : 'low';
-    return { percentage, level };
+          {/* Image Content */}
+          <div className="max-h-96 overflow-auto">
+            {imagePopup.imagePath ? (
+              <div>
+                <img
+                  src={imagePopup.imagePath}
+                  alt={`${imagePopup.activity} at ${imagePopup.timestamp}`}
+                  className="max-w-2xl h-auto rounded-lg"
+                  onError={(e) => {
+                    console.error('Image failed to load:', imagePopup.imagePath);
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'block';
+                  }}
+                />
+                <div style={{ display: 'none' }} className="text-center p-8">
+                  <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">Image Not Available</h4>
+                  <p className="text-sm text-gray-600 mb-4">
+                    The image could not be loaded from the network path.
+                  </p>
+                  <div className="bg-gray-100 p-3 rounded-lg text-left">
+                    <p className="text-xs text-gray-700 font-mono break-all">
+                      {imagePopup.displayPath}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center p-8">
+                <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                <h4 className="text-lg font-medium text-gray-900 mb-2">Error</h4>
+                <p className="text-sm text-gray-600">
+                  Could not construct image path. Missing required data.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Camera Selector Bar */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <div className="text-center mb-4">
+              <h4 className="text-lg font-semibold text-gray-800 mb-2 flex items-center justify-center">
+                <Camera className="w-5 h-5 mr-2 text-blue-600" />
+                Switch Camera View
+              </h4>
+              <p className="text-sm text-gray-500">Select a camera to view the same moment from different angles</p>
+            </div>
+            
+            <div className="camera-selector-container">
+              <div className="camera-buttons-row">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((cameraNumber) => {
+                  const isSelected = imagePopup.selectedCamera === cameraNumber.toString();
+                  return (
+                    <button
+                      key={cameraNumber}
+                      onClick={() => handleCameraNumberSelect(cameraNumber)}
+                      className={`camera-button ${isSelected ? 'camera-button-selected' : 'camera-button-default'}`}
+                    >
+                      <Camera className={`camera-icon ${isSelected ? 'camera-icon-selected' : 'camera-icon-default'}`} />
+                      <span className="camera-number">{cameraNumber}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            
+            {/* Current Selection Info */}
+            <div className="text-center mt-4">
+              <div className="inline-flex items-center px-3 py-2 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
+                <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                Currently viewing Camera {imagePopup.selectedCamera}
+                {imagePopup.selectedCamera !== imagePopup.originalCamera && (
+                  <span className="ml-2 text-blue-600">
+                    &nbsp; (Original: {imagePopup.originalCamera})
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="pt-4 border-t flex justify-between items-center">
+            <div className="text-xs text-gray-500">
+              Path: {imagePopup.displayPath}
+            </div>
+            <button
+              onClick={closeImagePopup}
+              className="popup-footer-close-button"
+            >
+              <XCircle className="w-4 h-4 mr-2" />
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  const formatTimestamp = (timestamp) => {
-    try {
-      return new Date(timestamp).toLocaleString();
-    } catch {
-      return timestamp;
-    }
-  };
+  // Enhanced Tab component with custom CSS classes
+  const TabButton = ({ id, label, count, isActive, onClick, icon }) => (
+    <div className="tab-button-container">
+      <button
+        onClick={() => onClick(id)}
+        className={`tab-button ${isActive ? 'tab-button-active' : 'tab-button-inactive'}`}
+      >
+        <div className="tab-button-content">
+          {icon && <span className="tab-button-icon">{icon}</span>}
+          <div className="tab-button-info">
+            <div className="tab-button-label">{label}</div>
+            {count !== undefined && (
+              <div className={`tab-button-count ${isActive ? 'tab-button-count-active' : 'tab-button-count-inactive'}`}>
+                {count}
+              </div>
+            )}
+          </div>
+        </div>
+        {isActive && <div className="tab-button-active-indicator"></div>}
+        <div className="tab-button-hover-overlay"></div>
+      </button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
@@ -761,8 +741,8 @@ const ActivityMonitoringUtility = () => {
         <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">Activity Monitoring Comparison</h1>
-              <p className="text-lg text-gray-600">Compare JSON detection data with database monitoring activities</p>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">Stretch Zone AI Comparision</h1>
+              <p className="text-lg text-gray-600">Compare AI detection data with agent monitoring activities</p>
             </div>
             <div className="text-right">
               <div className="flex items-center space-x-2 text-sm text-gray-500 mb-2">
@@ -771,12 +751,7 @@ const ActivityMonitoringUtility = () => {
               </div>
               {activities.length > 0 && (
                 <div className="text-xs text-green-600">
-                  ✅ {activities.length} activities loaded from database
-                </div>
-              )}
-              {isLoadingActivities && (
-                <div className="text-xs text-blue-600">
-                  🔄 Loading activities...
+                  ✅ {activities.length} activities loaded
                 </div>
               )}
             </div>
@@ -790,94 +765,63 @@ const ActivityMonitoringUtility = () => {
               <AlertCircle className="w-5 h-5 text-red-600 mr-3 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-red-800 font-medium">Error</p>
-                <p className="text-red-700 text-sm whitespace-pre-wrap">{error}</p>
+                <p className="text-red-700 text-sm">{error}</p>
               </div>
               <button
-                onClick={retryOperation}
-                className="ml-3 flex items-center px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors"
+                onClick={() => setError(null)}
+                className="ml-3 text-red-600 hover:text-red-800"
               >
-                <RefreshCw className="w-4 h-4 mr-1" />
-                Retry
+                ✕
               </button>
             </div>
           </div>
         )}
 
-        {/* System Status */}
-        <div className="bg-white rounded-xl shadow-lg p-4 mb-8">
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center space-x-4">
-              <div className={`flex items-center ${activities.length > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                <div className={`w-2 h-2 rounded-full mr-2 ${activities.length > 0 ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                Database: {activities.length > 0 ? 'Connected' : 'Disconnected'}
-              </div>
-              <div className="flex items-center text-blue-600">
-                <div className="w-2 h-2 rounded-full bg-blue-500 mr-2"></div>
-                Production
-              </div>
-            </div>
-            <div className="text-gray-500">
-              Last updated: {new Date().toLocaleTimeString()}
-            </div>
-          </div>
-        </div>
-
         {/* File Upload */}
-        <div className="grid grid-cols-1 gap-8 mb-8">
-          <div className="bg-white rounded-xl shadow-lg p-8 max-w-2xl mx-auto">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-4 flex items-center justify-center">
-              <Upload className="w-6 h-6 mr-2 text-blue-600" />
-              Upload JSON File for Analysis
-            </h2>
-            
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-400 transition-colors">
-              <input
-                type="file"
-                accept=".json"
-                onChange={handleFileUpload}
-                className="hidden"
-                id="file-upload"
-                disabled={isProcessing || isLoadingActivities}
-              />
-              <label htmlFor="file-upload" className={`cursor-pointer ${(isProcessing || isLoadingActivities) ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-xl font-medium text-gray-900 mb-2">Choose JSON file</p>
-                <p className="text-sm text-gray-500">Upload your activity monitoring JSON file</p>
-                <p className="text-xs text-gray-400 mt-2">Max file size: 100MB • Automatic email reports</p>
-              </label>
-            </div>
-
-            {/* Upload Progress */}
-            {uploadProgress > 0 && uploadProgress < 100 && (
-              <div className="mt-4">
-                <div className="bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                    style={{ width: `${uploadProgress}%` }}
-                  ></div>
-                </div>
-                <p className="text-sm text-gray-600 mt-1 text-center">Uploading... {uploadProgress}%</p>
-              </div>
-            )}
-            
-            {/* File Upload Success */}
-            {jsonData.length > 0 && (
-              <div className="mt-6 p-4 bg-green-50 rounded-lg">
-                <div className="flex items-center mb-2">
-                  <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-                  <p className="text-green-800 font-medium">✓ Successfully loaded {jsonData.length} records</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-green-700">
-                  <div>Store: {jsonData[0]?.store}</div>
-                  <div>Company: {jsonData[0]?.company}</div>
-                  <div>Date: {jsonData[0]?.date}</div>
-                </div>
-                <div className="text-xs text-green-600 mt-1">
-                  Time range: {jsonData[0]?.timestamp} → {jsonData[jsonData.length - 1]?.timestamp}
-                </div>
-              </div>
-            )}
+        <div className="bg-white rounded-xl shadow-lg p-8 mb-8 max-w-2xl mx-auto">
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4 flex items-center justify-center">
+            <Upload className="w-6 h-6 mr-2 text-blue-600" />
+            Upload JSON File for Analysis
+          </h2>
+          
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-400 transition-colors">
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleFileUpload}
+              className="hidden"
+              id="file-upload"
+              disabled={isProcessing}
+            />
+            <label htmlFor="file-upload" className={`cursor-pointer ${isProcessing ? 'opacity-50' : ''}`}>
+              <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-xl font-medium text-gray-900 mb-2">Choose JSON file</p>
+              <p className="text-sm text-gray-500">Upload your activity monitoring JSON file</p>
+            </label>
           </div>
+
+          {uploadProgress > 0 && uploadProgress < 100 && (
+            <div className="mt-4">
+              <div className="upload-progress-container">
+                <div className="upload-progress-bar" style={{ width: `${uploadProgress}%` }}></div>
+              </div>
+              <p className="text-sm text-gray-600 mt-2 text-center font-medium">Uploading... {uploadProgress}%</p>
+            </div>
+          )}
+          
+          {jsonData.length > 0 && (
+            <div className="mt-6 p-4 bg-green-50 rounded-lg">
+              <div className="flex items-center mb-2">
+                <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
+                <p className="text-green-800 font-medium">✓ Successfully loaded {jsonData.length} records</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-green-700">
+                <div>Store: {jsonData[0]?.store}</div>
+                <div>Company: {jsonData[0]?.company}</div>
+                <div>Date: {jsonData[0]?.date}</div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Processing Progress Modal */}
@@ -886,95 +830,44 @@ const ActivityMonitoringUtility = () => {
             <div className="bg-white rounded-xl shadow-2xl p-8 max-w-lg w-full mx-4">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Focused AI Detection Analysis</h3>
-                <p className="text-sm text-gray-600 mb-6 min-h-[2.5rem] flex items-center justify-center">
-                  {processingProgress.currentStep}
-                </p>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Processing Comparison</h3>
+                <p className="text-sm text-gray-600 mb-6">{processingProgress.currentStep}</p>
                 
-                {/* Progress Bar */}
-                <div className="w-full bg-gray-200 rounded-full h-4 mb-4 relative overflow-hidden">
+                <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
                   <div 
-                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-4 rounded-full transition-all duration-300 ease-out relative"
+                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-4 rounded-full transition-all"
                     style={{ width: `${processingProgress.percentage}%` }}
-                  >
-                    <div className="absolute inset-0 bg-white opacity-20 animate-pulse"></div>
-                  </div>
-                  <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-gray-700">
-                    {processingProgress.percentage}%
-                  </div>
+                  ></div>
                 </div>
                 
-                {/* Progress Info */}
-                <div className="flex justify-between text-sm text-gray-500 mb-4">
-                  <span>{processingProgress.percentage}% Complete</span>
-                  <span>
-                    Step {processingProgress.currentStepIndex + 1} of {processingProgress.totalSteps}
-                  </span>
+                <div className="text-sm text-gray-500">
+                  {processingProgress.percentage}% Complete
                 </div>
-                
-                {/* Estimated Time */}
-                {processingProgress.estimatedTimeRemaining > 0 && (
-                  <div className="mb-4 text-xs text-gray-400">
-                    Estimated time remaining: {processingProgress.estimatedTimeRemaining}s
-                  </div>
-                )}
-                
-                {/* Activity Stats */}
-                <div className="p-4 bg-gray-50 rounded-lg">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500">JSON Records:</span>
-                      <div className="font-semibold text-blue-600">{jsonData.length.toLocaleString()}</div>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">DB Activities:</span>
-                      <div className="font-semibold text-green-600">{activities.length.toLocaleString()}</div>
-                    </div>
-                  </div>
-                  
-                  {/* Live activity processing indicator */}
-                  {processingProgress.currentStep.includes('Comparing activity') && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="flex items-center justify-center text-xs text-gray-500">
-                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2"></div>
-                        Processing activities in real-time...
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                {/* Cancel button (optional) */}
-                <button
-                  onClick={() => {
-                    setProcessingProgress(prev => ({ ...prev, show: false }));
-                    setIsProcessing(false);
-                  }}
-                  className="mt-4 px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-                >
-                  Hide Progress (processing continues)
-                </button>
               </div>
             </div>
           </div>
         )}
+
+        {/* Spacer between Upload and Controls */}
+        <div className="h-8"></div>
 
         {/* Control Buttons */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
           <div className="flex flex-wrap justify-center gap-4">
             <button
               onClick={processComparison}
-              disabled={isProcessing || jsonData.length === 0 || activities.length === 0 || isLoadingActivities}
-              className="flex items-center px-8 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-lg font-semibold"
+              disabled={isProcessing || jsonData.length === 0 || activities.length === 0}
+              className="flex items-center px-8 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors text-lg font-semibold"
             >
               {isProcessing ? (
                 <>
                   <RefreshCw className="w-6 h-6 mr-3 animate-spin" />
-                  Processing & Sending Report...
+                  Processing...
                 </>
               ) : (
                 <>
                   <BarChart3 className="w-6 h-6 mr-3" />
-                  Process Comparison & Send Report
+                  Process Comparison
                 </>
               )}
             </button>
@@ -982,450 +875,392 @@ const ActivityMonitoringUtility = () => {
             <button
               onClick={downloadReport}
               disabled={!comparisonResults}
-              className="flex items-center px-6 py-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center px-6 py-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 transition-colors"
             >
               <Download className="w-5 h-5 mr-2" />
-              Download Detailed Report
+              Download Report
             </button>
 
             <button
               onClick={loadActivities}
               disabled={isLoadingActivities}
-              className="flex items-center px-6 py-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center px-6 py-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 transition-colors"
             >
-              {isLoadingActivities ? (
-                <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="w-5 h-5 mr-2" />
-              )}
+              <RefreshCw className={`w-5 h-5 mr-2 ${isLoadingActivities ? 'animate-spin' : ''}`} />
               Refresh Activities
             </button>
           </div>
-          
-          {comparisonResults && (
-            <div className="mt-4 p-3 bg-green-50 rounded-lg text-center">
-              <p className="text-green-800 text-sm font-medium">
-                ✅ Analysis complete! Report automatically sent via email.
-              </p>
-              <div className="text-green-600 text-xs mt-1 space-x-4">
-                <span>Database Activities: {comparisonResults.totalDbActivities || 0}</span>
-                <span>Accurate Detections: {comparisonResults.matchedCount || comparisonResults.matches?.length || 0}</span>
-                <span>Missed by AI: {comparisonResults.unmatchedCount || comparisonResults.unmatches?.length || 0}</span>
-                <span>Accuracy: {comparisonResults.accuracyPercentage || 0}%</span>
-              </div>
-              {/* DEBUG INFO */}
-              {/* <div className="text-xs text-gray-500 mt-2">
-                DEBUG: Available keys: {Object.keys(comparisonResults).join(', ')}
-              </div> */}
-            </div>
-          )}
         </div>
 
         {/* Results Dashboard */}
         {comparisonResults && (
           <>
-            {/* Summary Cards - SIMPLIFIED */}
+            {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-green-100 text-sm">Detection Accuracy</p>
-                    <p className="text-3xl font-bold">{comparisonResults.accuracyPercentage || 0}%</p>
+              <div className="summary-card summary-card-accuracy">
+                <div className="summary-card-content">
+                  <div className="summary-card-info">
+                    <p className="summary-card-label">Detection Accuracy</p>
+                    <p className="summary-card-value">{comparisonResults.accuracyPercentage || 0}%</p>
+                    <div className="summary-card-subtitle">AI Model Performance</div>
                   </div>
-                  <CheckCircle className="w-8 h-8 text-green-200" />
+                  <div className="summary-card-icon-container">
+                    <CheckCircle className="summary-card-icon" />
+                    <div className="summary-card-icon-glow"></div>
+                  </div>
                 </div>
+                <div className="summary-card-bottom-gradient"></div>
               </div>
               
-              <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-blue-100 text-sm">Accurate Detections</p>
-                    <p className="text-3xl font-bold">{comparisonResults.matchedCount || comparisonResults.matches?.length || 0}</p>
+              <div className="summary-card summary-card-matches">
+                <div className="summary-card-content">
+                  <div className="summary-card-info">
+                    <p className="summary-card-label">Accurate Matches</p>
+                    <p className="summary-card-value">{comparisonResults.matchedCount || 0}</p>
+                    <div className="summary-card-subtitle">Verified Activities</div>
                   </div>
-                  <Users className="w-8 h-8 text-blue-200" />
+                  <div className="summary-card-icon-container">
+                    <Users className="summary-card-icon" />
+                    <div className="summary-card-icon-glow"></div>
+                  </div>
                 </div>
+                <div className="summary-card-bottom-gradient"></div>
               </div>
               
-              <div className="bg-gradient-to-r from-red-500 to-red-600 rounded-xl p-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-red-100 text-sm">Missed by AI</p>
-                    <p className="text-3xl font-bold">{comparisonResults.unmatchedCount || comparisonResults.unmatches?.length || 0}</p>
+              <div className="summary-card summary-card-database">
+                <div className="summary-card-content">
+                  <div className="summary-card-info">
+                    <p className="summary-card-label">Database Activities</p>
+                    <p className="summary-card-value">{comparisonResults.totalDbActivities || 0}</p>
+                    <div className="summary-card-subtitle">Total DB Records</div>
                   </div>
-                  <XCircle className="w-8 h-8 text-red-200" />
+                  <div className="summary-card-icon-container">
+                    <Database className="summary-card-icon" />
+                    <div className="summary-card-icon-glow"></div>
+                  </div>
                 </div>
+                <div className="summary-card-bottom-gradient"></div>
               </div>
               
-              <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 rounded-xl p-6 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-purple-100 text-sm">Database Activities</p>
-                    <p className="text-3xl font-bold">{comparisonResults.totalDbActivities || 0}</p>
+              <div className="summary-card summary-card-json">
+                <div className="summary-card-content">
+                  <div className="summary-card-info">
+                    <p className="summary-card-label">JSON Activities</p>
+                    <p className="summary-card-value">{getFilteredJsonActivitiesCount()}</p>
+                    <div className="summary-card-subtitle">Detected Events</div>
                   </div>
-                  <Database className="w-8 h-8 text-purple-200" />
+                  <div className="summary-card-icon-container">
+                    <FileText className="summary-card-icon" />
+                    <div className="summary-card-icon-glow"></div>
+                  </div>
                 </div>
+                <div className="summary-card-bottom-gradient"></div>
               </div>
             </div>
 
-            {/* Charts - SIMPLIFIED */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-              {/* Detection Overview */}
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">AI Detection Performance</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={chartData}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      dataKey="value"
-                      label={({name, value}) => `${name}: ${value}`}
-                    >
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+            {/* Tabbed Results */}
+            <div 
+              className="rounded-xl shadow-lg mb-8 overflow-hidden"
+              style={{ backgroundColor: '#ffffff' }}
+            >
+              {/* Tab Headers */}
+              <div 
+                className="px-8 pt-6 pb-4 border-b"
+                style={{ 
+                  backgroundColor: '#f3f4f6',
+                  borderBottomColor: '#e5e7eb'
+                }}
+              >
+                <nav className="flex justify-center space-x-4">
+                  <TabButton
+                    id="matches"
+                    label="Accurate Matches"
+                    count={comparisonResults.matches?.length || 0}
+                    isActive={activeTab === 'matches'}
+                    onClick={setActiveTab}
+                    icon="✅"
+                  />
+                  <TabButton
+                    id="database"
+                    label="Database Activities"
+                    count={comparisonResults.allDbActivities?.length || 0}
+                    isActive={activeTab === 'database'}
+                    onClick={setActiveTab}
+                    icon="🗄️"
+                  />
+                  <TabButton
+                    id="json"
+                    label="JSON Activities"
+                    count={getFilteredJsonActivitiesCount()}
+                    isActive={activeTab === 'json'}
+                    onClick={setActiveTab}
+                    icon="📄"
+                  />
+                </nav>
               </div>
 
-              {/* Activity Detection Count */}
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">Detections by Activity Type</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={activityAccuracyData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip 
-                      formatter={(value) => [value, 'Detections']}
-                      labelFormatter={(label, payload) => {
-                        const item = payload?.[0]?.payload;
-                        return item?.fullName || label;
-                      }}
-                    />
-                    <Bar dataKey="count" fill="#3B82F6" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Detailed Results Tables - SIMPLIFIED */}
-            <div className="space-y-8">
-              {/* Accurate Detections (Matches) */}
-              {comparisonResults.matches && comparisonResults.matches.length > 0 && (
-                <div className="bg-white rounded-xl shadow-lg p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                    <CheckCircle className="w-6 h-6 mr-2 text-green-600" />
-                    ✅ Accurate Detections - Found in Both Systems ({comparisonResults.matches.length})
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full table-auto">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Activity</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Camera</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Zone</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confidence</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {getPaginatedData(comparisonResults.matches, matchesPagination.currentPage, matchesPagination.itemsPerPage).map((match, index) => {
-                          const confidence = formatConfidence(match.confidence);
-                          return (
-                            <tr key={index} className="hover:bg-gray-50">
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <div className="flex items-center">
-                                  <Clock className="w-4 h-4 mr-2 text-gray-400" />
-                                  {formatTimestamp(match.timestamp)}
-                                </div>
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{match.activityName}</td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <div className="flex items-center">
-                                  <Camera className="w-4 h-4 mr-2 text-gray-400" />
-                                  {match.camera}
-                                </div>
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{match.zone || 'N/A'}</td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  confidence.level === 'high' ? 'bg-green-100 text-green-800' :
-                                  confidence.level === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-red-100 text-red-800'
-                                }`}>
-                                  {confidence.percentage}%
-                                </span>
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                  ✅ Accurate
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <PaginationControls
-                    currentPage={matchesPagination.currentPage}
-                    totalItems={comparisonResults.matches.length}
-                    itemsPerPage={matchesPagination.itemsPerPage}
-                    onPageChange={(page) => setMatchesPagination(prev => ({ ...prev, currentPage: page }))}
-                    onItemsPerPageChange={(items) => setMatchesPagination({ currentPage: 1, itemsPerPage: items })}
-                    label="accurate detections"
-                  />
-                </div>
-              )}
-
-              {/* Missed by AI (Unmatches) */}
-              {comparisonResults.unmatches && comparisonResults.unmatches.length > 0 && (
-                <div className="bg-white rounded-xl shadow-lg p-6">
-                  <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-                    <XCircle className="w-6 h-6 mr-2 text-red-600" />
-                    ❌ False AI Detections by AI - In Database Only ({comparisonResults.unmatches.length})
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full table-auto">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Activity</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Camera</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {getPaginatedData(comparisonResults.unmatches, unmatchesPagination.currentPage, unmatchesPagination.itemsPerPage).map((unmatch, index) => (
-                          <tr key={index} className="hover:bg-gray-50">
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                              <div className="flex items-center">
-                                <Clock className="w-4 h-4 mr-2 text-gray-400" />
-                                {formatTimestamp(unmatch.timestamp)}
-                              </div>
-                            </td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{unmatch.activityName}</td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                              <div className="flex items-center">
-                                <Camera className="w-4 h-4 mr-2 text-gray-400" />
-                                {unmatch.camera}
-                              </div>
-                            </td>
-                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                AI Detected
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <PaginationControls
-                    currentPage={unmatchesPagination.currentPage}
-                    totalItems={comparisonResults.unmatches.length}
-                    itemsPerPage={unmatchesPagination.itemsPerPage}
-                    onPageChange={(page) => setUnmatchesPagination(prev => ({ ...prev, currentPage: page }))}
-                    onItemsPerPageChange={(items) => setUnmatchesPagination({ currentPage: 1, itemsPerPage: items })}
-                    label="missed activities"
-                  />
-                </div>
-              )}
-
-            {/* Raw Data Verification - Collapsible */}
-            <div className="space-y-4">
-              {/* No Results Message */}
-              {comparisonResults && 
-               (!comparisonResults.matches || comparisonResults.matches.length === 0) &&
-               (!comparisonResults.unmatches || comparisonResults.unmatches.length === 0) && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-8 text-center mb-6">
-                  <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-yellow-800 mb-2">No Activity Data Found</h3>
-                  <p className="text-yellow-700">
-                    No activities were found for comparison. Please check that your JSON file contains activity bounds and that the database has monitoring data for this date.
-                  </p>
-                </div>
-              )}
-
-              {/* Raw JSON Activities */}
-              <details className="bg-white rounded-xl shadow-lg">
-                <summary className="p-6 cursor-pointer hover:bg-gray-50 font-semibold text-gray-900 flex items-center">
-                  <FileText className="w-5 h-5 mr-2 text-blue-600" />
-                  📄 Raw JSON Activities Data ({jsonData.reduce((count, record) => count + (record.bounds?.length || 0), 0)} total bounds)
-                  <span className="ml-auto text-sm text-gray-500">Click to expand/collapse</span>
-                </summary>
-                <div className="px-6 pb-6 border-t border-gray-200">
-                  <div className="mt-4">
-                    <h4 className="font-medium text-gray-900 mb-2">Extracted Activities from JSON:</h4>
-                    <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                      <pre className="text-xs text-gray-700 whitespace-pre-wrap">
-                        {jsonData.length > 0 ? JSON.stringify(
-                          jsonData.map(record => ({
-                            timestamp: record.timestamp,
-                            camera: record.camera,
-                            image: record.image,
-                            bounds: record.bounds?.map(bound => ({
-                              label: bound.label,
-                              confidence: bound.confidence,
-                              zone: bound.zone,
-                              mappedToActivityIds: bound.label === 'person-employee' ? [1,2,3,4] : 
-                                                 bound.label === 'person-customer' ? [5] : []
-                            })) || []
-                          })).slice(0, 10),
-                          null, 2
-                        ) + (jsonData.length > 10 ? `\n... and ${jsonData.length - 10} more records` : '') : 'No JSON data loaded'}
-                      </pre>
-                    </div>
-                  </div>
-                </div>
-              </details>
-
-              {/* Raw Database Activities */}
-              <details className="bg-white rounded-xl shadow-lg">
-                <summary className="p-6 cursor-pointer hover:bg-gray-50 font-semibold text-gray-900 flex items-center">
-                  <Database className="w-5 h-5 mr-2 text-green-600" />
-                  🗄️ Raw Database Monitoring Activities ({activities.length} activity types loaded)
-                  <span className="ml-auto text-sm text-gray-500">Click to expand/collapse</span>
-                </summary>
-                <div className="px-6 pb-6 border-t border-gray-200">
-                  <div className="mt-4">
-                    <h4 className="font-medium text-gray-900 mb-2">Available Activity Types:</h4>
-                    <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                      <pre className="text-xs text-gray-700">
-                        {JSON.stringify(activities.map(activity => ({
-                          ActivityID: activity.ActivityID,
-                          ActivityName: activity.ActivityName
-                        })), null, 2)}
-                      </pre>
-                    </div>
-                    
-                    <h4 className="font-medium text-gray-900 mb-2">Sample Database Monitoring Records:</h4>
-                    <div className="text-sm text-gray-600 mb-2">
-                      (Note: This shows the structure - actual data loaded from your database)
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                      <pre className="text-xs text-gray-700 whitespace-pre-wrap">
-                        {`Expected Database Structure:
-[
-  {
-    "MonitoringActivityID": 1,
-    "ActivityID": 1,
-    "ActivityName": "Sales Desk",
-    "Timestamp": "2024-01-15T10:30:00Z",
-    "CameraNo": "Camera_1"
-  },
-  {
-    "MonitoringActivityID": 2,
-    "ActivityID": 2,
-    "ActivityName": "Cleaning",
-    "Timestamp": "2024-01-15T11:15:00Z", 
-    "CameraNo": "Camera_2"
-  }
-  // ... more records
-]`}
-                      </pre>
-                    </div>
-                  </div>
-                </div>
-              </details>
-
-              {/* Comparison Logic Explanation */}
-              <details className="bg-white rounded-xl shadow-lg">
-                <summary className="p-6 cursor-pointer hover:bg-gray-50 font-semibold text-gray-900 flex items-center">
-                  <AlertTriangle className="w-5 h-5 mr-2 text-yellow-600" />
-                  🔍 Comparison Logic & Matching Rules
-                  <span className="ml-auto text-sm text-gray-500">Click to expand/collapse</span>
-                </summary>
-                <div className="px-6 pb-6 border-t border-gray-200">
-                  <div className="mt-4 space-y-4">
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Activity Mapping Rules:</h4>
-                      <div className="bg-blue-50 rounded-lg p-4">
-                        <div className="text-sm text-blue-800">
-                          <div>JSON Label → Database Activity IDs</div>
-                          <div>├── "person-employee" → [1, 2, 3, 4] (Sales Desk, Stretching, Cleaning, Making Calls)</div>
-                          <div>└── "person-customer" → [5] (Intake)</div>
+              {/* Tab Content */}
+              <div 
+                className="p-6"
+                style={{ 
+                  backgroundColor: '#ffffff',
+                  minHeight: '400px'
+                }}
+              >
+                {/* Accurate Matches Tab */}
+                {activeTab === 'matches' && (
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                      Activities Found in Both JSON and Database
+                    </h3>
+                    {comparisonResults.matches && comparisonResults.matches.length > 0 ? (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full table-auto">
+                            <thead>
+                              <tr style={{ backgroundColor: '#f9fafb' }}>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Activity</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Camera</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Confidence</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                              {getPaginatedData(comparisonResults.matches, matchesPagination.currentPage, matchesPagination.itemsPerPage).map((match, index) => {
+                                const confidence = formatConfidence(match.confidence);
+                                return (
+                                  <tr key={index} className="hover:bg-gray-50">
+                                    <td className="px-4 py-4 text-sm text-gray-900">
+                                      <div className="flex items-center">
+                                        <Clock className="w-4 h-4 mr-2 text-gray-400" />
+                                        {formatTimestamp(match.timestamp)}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-4 text-sm font-medium text-gray-900">{match.activityName}</td>
+                                    <td className="px-4 py-4 text-sm text-gray-900">
+                                      <div className="flex items-center">
+                                        <button
+                                          onClick={() => handleCameraClick(match)}
+                                          className="camera-table-button"
+                                          title="Click to view image"
+                                        >
+                                          <Camera className="camera-table-icon" />
+                                          <span className="camera-table-text">{match.camera}</span>
+                                        </button>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-4 text-sm text-gray-900">
+                                      <span className={`px-2 py-1 rounded-full text-xs font-medium`}
+                                        style={{
+                                          backgroundColor: confidence.level === 'high' ? '#dcfce7' : confidence.level === 'medium' ? '#fef3c7' : '#fee2e2',
+                                          color: confidence.level === 'high' ? '#166534' : confidence.level === 'medium' ? '#92400e' : '#991b1b'
+                                        }}
+                                      >
+                                        {confidence.percentage}%
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
+                        <PaginationControls
+                          currentPage={matchesPagination.currentPage}
+                          totalItems={comparisonResults.matches.length}
+                          itemsPerPage={matchesPagination.itemsPerPage}
+                          onPageChange={(page) => setMatchesPagination(prev => ({ ...prev, currentPage: page }))}
+                          onItemsPerPageChange={(items) => setMatchesPagination({ currentPage: 1, itemsPerPage: items })}
+                          label="matches"
+                        />
+                      </>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-yellow-500" />
+                        <p>No matching activities found between JSON and database</p>
                       </div>
-                    </div>
+                    )}
+                  </div>
+                )}
 
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Matching Criteria:</h4>
-                      <div className="bg-green-50 rounded-lg p-4">
-                        <div className="text-sm text-green-800">
-                          <p className="font-medium mb-2">✅ MATCH Found When:</p>
-                          <ul className="list-disc list-inside space-y-1">
-                            <li><strong>Timestamp:</strong> JSON timestamp = Database timestamp (normalized to ISO format)</li>
-                            <li><strong>Activity ID:</strong> Mapped JSON label activity ID = Database ActivityID</li>
-                            <li><strong>Camera:</strong> JSON camera = Database CameraNo</li>
-                          </ul>
-                          <p className="mt-3 text-xs">
-                            Example Match: JSON("2024-01-15T10:30:00Z", 1, "Camera_1") = DB("2024-01-15T10:30:00Z", 1, "Camera_1")
+                {/* Database Activities Tab */}
+                {activeTab === 'database' && (
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                      All Database Monitoring Activities
+                    </h3>
+                    {comparisonResults.allDbActivities && comparisonResults.allDbActivities.length > 0 ? (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full table-auto">
+                            <thead>
+                              <tr style={{ backgroundColor: '#f9fafb' }}>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Activity</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Camera</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                              {getPaginatedData(comparisonResults.allDbActivities, dbActivitiesPagination.currentPage, dbActivitiesPagination.itemsPerPage).map((activity, index) => (
+                                <tr key={index} className="hover:bg-gray-50">
+                                  <td className="px-4 py-4 text-sm text-gray-900">
+                                    <div className="flex items-center">
+                                      <Clock className="w-4 h-4 mr-2 text-gray-400" />
+                                      {formatTimestamp(activity.Timestamp)}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-4 text-sm font-medium text-gray-900">{activity.ActivityName}</td>
+                                  <td className="px-4 py-4 text-sm text-gray-900">
+                                    <div className="flex items-center">
+                                      <button
+                                        onClick={() => handleCameraClick({
+                                          timestamp: activity.Timestamp,
+                                          camera: activity.CameraNo,
+                                          activityName: activity.ActivityName
+                                        })}
+                                        className="camera-table-button"
+                                        title="Click to view image"
+                                      >
+                                        <Camera className="camera-table-icon" />
+                                        <span className="camera-table-text">{activity.CameraNo}</span>
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <PaginationControls
+                          currentPage={dbActivitiesPagination.currentPage}
+                          totalItems={comparisonResults.allDbActivities.length}
+                          itemsPerPage={dbActivitiesPagination.itemsPerPage}
+                          onPageChange={(page) => setDbActivitiesPagination(prev => ({ ...prev, currentPage: page }))}
+                          onItemsPerPageChange={(items) => setDbActivitiesPagination({ currentPage: 1, itemsPerPage: items })}
+                          label="database activities"
+                        />
+                      </>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <Database className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                        <p>No database activities found</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* JSON Activities Tab */}
+                {activeTab === 'json' && (
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                      JSON Activities (Stretch Zone Activities Labels Only)
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Shows only stretch zone activity labels like "stretching", "cleaning", etc. 
+                    </p>
+                    {(() => {
+                      const filteredActivities = getFilteredJsonActivities();
+                      
+                      return filteredActivities.length > 0 ? (
+                        <>
+                          <div className="overflow-x-auto">
+                            <table className="w-full table-auto">
+                              <thead>
+                                <tr style={{ backgroundColor: '#f9fafb' }}>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Activity</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Camera</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">JSON Label</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Confidence</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                {getPaginatedData(
+                                  filteredActivities, 
+                                  jsonActivitiesPagination.currentPage, 
+                                  jsonActivitiesPagination.itemsPerPage
+                                ).map((activity, index) => {
+                                  const confidence = formatConfidence(activity.confidence);
+                                  return (
+                                    <tr key={index} className="hover:bg-gray-50">
+                                      <td className="px-4 py-4 text-sm text-gray-900">
+                                        <div className="flex items-center">
+                                          <Clock className="w-4 h-4 mr-2 text-gray-400" />
+                                          {formatTimestamp(activity.timestamp)}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-4 text-sm font-medium text-gray-900">{activity.activityName}</td>
+                                      <td className="px-4 py-4 text-sm text-gray-900">
+                                        <div className="flex items-center">
+                                          <button
+                                            onClick={() => handleCameraClick(activity)}
+                                            className="camera-table-button"
+                                            title="Click to view image"
+                                          >
+                                            <Camera className="camera-table-icon" />
+                                            <span className="camera-table-text">{activity.camera}</span>
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-4 text-sm text-gray-900">
+                                        <span 
+                                          className="px-3 py-1 rounded-full text-xs font-medium"
+                                          style={{
+                                            backgroundColor: '#dcfce7',
+                                            color: '#166534'
+                                          }}
+                                        >
+                                          {activity.label}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-4 text-sm text-gray-900">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium`}
+                                          style={{
+                                            backgroundColor: confidence.level === 'high' ? '#dcfce7' : confidence.level === 'medium' ? '#fef3c7' : '#fee2e2',
+                                            color: confidence.level === 'high' ? '#166534' : confidence.level === 'medium' ? '#92400e' : '#991b1b'
+                                          }}
+                                        >
+                                          {confidence.percentage}%
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <PaginationControls
+                            currentPage={jsonActivitiesPagination.currentPage}
+                            totalItems={filteredActivities.length}
+                            itemsPerPage={jsonActivitiesPagination.itemsPerPage}
+                            onPageChange={(page) => setJsonActivitiesPagination(prev => ({ ...prev, currentPage: page }))}
+                            onItemsPerPageChange={(items) => setJsonActivitiesPagination({ currentPage: 1, itemsPerPage: items })}
+                            label="json activities"
+                          />
+                        </>
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          <FileText className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                          <p className="font-medium">No Specific Activity Labels Found</p>
+                          <p className="text-sm mt-2">
+                            No activities like "stretching", "cleaning", etc. were detected in the JSON file.
+                          </p>
+                          <p className="text-xs mt-1 text-gray-400">
+                            Only showing specific activity labels, not generic "person-employee" or "person-customer" labels.
                           </p>
                         </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-2">Verification Steps:</h4>
-                      <div className="bg-yellow-50 rounded-lg p-4">
-                        <div className="text-sm text-yellow-800">
-                          <ol className="list-decimal list-inside space-y-1">
-                            <li>Check that JSON bounds have correct labels ("person-employee", "person-customer")</li>
-                            <li>Verify timestamps are in consistent format (both systems)</li>
-                            <li>Ensure camera numbers match exactly</li>
-                            <li>Confirm ActivityIDs exist in your database Activities table</li>
-                            <li>Validate that database has monitoring records for the same date</li>
-                          </ol>
-                        </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </div>
-                </div>
-              </details>
-
-              {/* Performance Metrics */}
-              {comparisonResults?.performanceMetrics && (
-                <details className="bg-white rounded-xl shadow-lg">
-                  <summary className="p-6 cursor-pointer hover:bg-gray-50 font-semibold text-gray-900 flex items-center">
-                    <BarChart3 className="w-5 h-5 mr-2 text-purple-600" />
-                    ⚡ Performance Metrics & Processing Details
-                    <span className="ml-auto text-sm text-gray-500">Click to expand/collapse</span>
-                  </summary>
-                  <div className="px-6 pb-6 border-t border-gray-200">
-                    <div className="mt-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-purple-50 rounded-lg p-4">
-                          <h4 className="font-medium text-purple-900 mb-2">Processing Speed:</h4>
-                          <div className="text-sm text-purple-800">
-                            <p>Total Time: <strong>{comparisonResults.performanceMetrics.totalProcessingTimeMs}ms</strong></p>
-                            <p>Activities/sec: <strong>{comparisonResults.performanceMetrics.activitiesProcessedPerSecond?.toLocaleString()}</strong></p>
-                          </div>
-                        </div>
-                        <div className="bg-green-50 rounded-lg p-4">
-                          <h4 className="font-medium text-green-900 mb-2">Results Summary:</h4>
-                          <div className="text-sm text-green-800">
-                            <p>Database Activities: <strong>{comparisonResults.totalDbActivities}</strong></p>
-                            <p>Matches: <strong>{comparisonResults.matchedCount}</strong></p>
-                            <p>Misses: <strong>{comparisonResults.unmatchedCount}</strong></p>
-                            <p>Accuracy: <strong>{comparisonResults.accuracyPercentage}%</strong></p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </details>
-              )}
-            </div>
+                )}
+              </div>
             </div>
           </>
         )}
       </div>
+
+      {/* Image Popup Modal */}
+      <ImagePopupModal />
     </div>
   );
 };

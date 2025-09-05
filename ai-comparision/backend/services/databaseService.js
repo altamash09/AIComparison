@@ -20,9 +20,9 @@ class DatabaseService {
           idleTimeoutMillis: 30000
         },
         options: {
-          encrypt: false, // Set to true only if required (Azure/SSL)
+          encrypt: false,
           trustServerCertificate: true,
-          appName: 'CMS Software' // 👈 Spoof the app name
+          appName: 'CMS Software'
         }
       };
 
@@ -89,30 +89,45 @@ class DatabaseService {
         return [];
       }
 
+      // Enhanced query with better error handling and logging
       const result = await this.pool.request()
-        .input('storeId', sql.Int, storeId)
+        .input('storeId', sql.Int, parseInt(storeId))
         .input('date', sql.VarChar, date)
         .query(`
           SELECT 
             ma.MonitoringActivityID, 
             ma.StoreMonitoringID, 
             ma.ActivityID, 
-            ma.Timestamp, 
+            CASE WHEN ma.ActivityActionID = 2 THEN DATEADD(MINUTE, -1, ma.Timestamp) ELSE ma.Timestamp END [Timestamp], 
             ma.CameraNo, 
             ma.ImageURL,
             a.ActivityName
           FROM MonitoringActivities ma
           JOIN Activities a ON ma.ActivityID = a.ActivityID
           JOIN StoreMonitoring sm ON ma.StoreMonitoringID = sm.storeMonitoringID
-          WHERE sm.storeID = @storeId AND CAST(ma.Timestamp AS DATE) = @date
+          WHERE sm.storeID = @storeId 
+            AND CAST(ma.Timestamp AS DATE) = CAST(@date AS DATE)
           ORDER BY ma.Timestamp
         `);
 
-      console.log(`📊 Loaded ${result.recordset.length} monitoring activities`);
+      console.log(`📊 Loaded ${result.recordset.length} monitoring activities for store ${storeId} on ${date}`);
+      
+      // Log sample data for debugging (first 3 records)
+      if (result.recordset.length > 0) {
+        console.log('📋 Sample monitoring activities:');
+        result.recordset.slice(0, 3).forEach((record, index) => {
+          console.log(`  ${index + 1}. ${record.ActivityName} (ID: ${record.ActivityID}) at ${record.Timestamp} on ${record.CameraNo}`);
+        });
+      }
+      
       return result.recordset;
 
     } catch (error) {
       console.error('❌ Error fetching monitoring activities:', error.message);
+      console.error('❌ Query parameters:', { storeId, date });
+      
+      // Return empty array instead of throwing to allow the comparison to continue
+      // This way the frontend can still show the JSON activities even if DB is empty
       return [];
     }
   }
@@ -121,7 +136,14 @@ class DatabaseService {
     try {
       if (!this.pool) {
         console.warn('⚠️ Database not connected, logging to console instead');
-        console.log('📝 Comparison Results (Console Log):', data);
+        console.log('📝 Comparison Results (Console Log):', {
+          storeId: data.metadata?.storeId,
+          companyId: data.metadata?.companyId,
+          accuracyPercentage: data.accuracyPercentage,
+          matchedCount: data.matchedCount,
+          totalDbActivities: data.totalDbActivities,
+          totalJsonActivities: data.totalJsonActivities
+        });
         return { insertId: 'console-logged' };
       }
 
@@ -129,8 +151,8 @@ class DatabaseService {
         .input('StoreID', sql.Int, data.metadata?.storeId || 0)
         .input('CompanyID', sql.Int, data.metadata?.companyId || 0)
         .input('AnalysisDate', sql.DateTime, new Date())
-        .input('OverallAccuracy', sql.Float, data.overallAccuracy || 0)
-        .input('TotalMatches', sql.Int, data.totalMatches || 0)
+        .input('OverallAccuracy', sql.Float, data.accuracyPercentage || 0)
+        .input('TotalMatches', sql.Int, data.matchedCount || 0)
         .input('TotalJsonActivities', sql.Int, data.totalJsonActivities || 0)
         .input('TotalDbActivities', sql.Int, data.totalDbActivities || 0)
         .input('ProcessingTime', sql.DateTime, new Date())
@@ -180,6 +202,55 @@ class DatabaseService {
     } catch (error) {
       console.error('❌ Error fetching comparison history:', error.message);
       throw error;
+    }
+  }
+
+  // Helper method to test database connectivity
+  async testConnection() {
+    try {
+      if (!this.pool) {
+        throw new Error('Database pool not initialized');
+      }
+
+      const result = await this.pool.request().query('SELECT 1 as test');
+      console.log('✅ Database connection test successful');
+      return true;
+    } catch (error) {
+      console.error('❌ Database connection test failed:', error.message);
+      return false;
+    }
+  }
+
+  // Helper method to check if required tables exist
+  async validateTables() {
+    try {
+      if (!this.pool) {
+        console.warn('⚠️ Cannot validate tables - database not connected');
+        return false;
+      }
+
+      const requiredTables = ['Activities', 'MonitoringActivities', 'StoreMonitoring'];
+      
+      for (const tableName of requiredTables) {
+        const result = await this.pool.request()
+          .input('tableName', sql.NVarChar, tableName)
+          .query(`
+            SELECT COUNT(*) as tableExists 
+            FROM INFORMATION_SCHEMA.TABLES 
+            WHERE TABLE_NAME = @tableName
+          `);
+        
+        if (result.recordset[0].tableExists === 0) {
+          console.warn(`⚠️ Required table '${tableName}' not found`);
+          return false;
+        }
+      }
+
+      console.log('✅ All required database tables found');
+      return true;
+    } catch (error) {
+      console.error('❌ Error validating database tables:', error.message);
+      return false;
     }
   }
 

@@ -670,3 +670,887 @@ input:focus {
     /* Add dark mode styles if needed */
   }
 }
+
+
+/* Camera Selector & UI Enhancement Styles - Add this to your App.css */
+
+/* === Summary Cards Styles === */
+.summary-card {
+  position: relative;
+  padding: 0;
+  border-radius: 20px;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.summary-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.summary-card-accuracy {
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+}
+
+.summary-card-matches {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+}
+
+.summary-card-database {
+  background: linear-gradient(135deg, #eab308 0%, #ca8a04 50%, #a16207 100%);
+}
+
+.summary-card-json {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 50%, #dc2626 100%);
+}
+
+.summary-card-content {
+  position: relative;
+  padding: 28px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 2;
+  height: 140px;
+}
+
+.summary-card-info {
+  flex: 1;
+  color: #ffffff;
+}
+
+.summary-card-label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  opacity: 0.9;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.summary-card-value {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 6px;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover .summary-card-value {
+  transform: scale(1.1);
+  text-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.summary-card-subtitle {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.8;
+  letter-spacing: 0.3px;
+}
+
+.summary-card-icon-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+}
+
+.summary-card-icon {
+  width: 40px;
+  height: 40px;
+  color: rgba(255, 255, 255, 0.9);
+  z-index: 3;
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover .summary-card-icon {
+  transform: rotate(10deg) scale(1.1);
+  color: #ffffff;
+}
+
+.summary-card-icon-glow {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover .summary-card-icon-glow {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.2);
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
+}
+
+.summary-card-bottom-gradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.3) 0%, 
+    rgba(255, 255, 255, 0.8) 50%, 
+    rgba(255, 255, 255, 0.3) 100%);
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover .summary-card-bottom-gradient {
+  height: 8px;
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.5) 0%, 
+    rgba(255, 255, 255, 1) 50%, 
+    rgba(255, 255, 255, 0.5) 100%);
+}
+
+/* Camera Selector & UI Enhancement Styles - Add this to your App.css */
+
+/* === Tab Button Styles === */
+.tab-button-container {
+  position: relative;
+  display: inline-block;
+}
+
+.tab-button {
+  position: relative;
+  padding: 20px 32px;
+  border: none;
+  border-radius: 16px 16px 0 0;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  overflow: hidden;
+  min-width: 160px;
+  backdrop-filter: blur(10px);
+  border-bottom: 3px solid transparent;
+}
+
+.tab-button-inactive {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%);
+  color: #64748b;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+  border-bottom-color: #e2e8f0;
+}
+
+.tab-button-active {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%);
+  color: #ffffff;
+  box-shadow: 0 8px 25px rgba(37, 99, 235, 0.3);
+  border-bottom-color: #3b82f6;
+  transform: translateY(-2px);
+}
+
+.tab-button:hover:not(.tab-button-active) {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 197, 253, 0.1) 100%);
+  color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.15);
+}
+
+.tab-button-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 2;
+  position: relative;
+}
+
+.tab-button-icon {
+  font-size: 20px;
+  transition: all 0.3s ease;
+}
+
+.tab-button-active .tab-button-icon {
+  transform: scale(1.1);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.tab-button-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.tab-button-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.tab-button-count {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  transition: all 0.3s ease;
+  min-width: 24px;
+  text-align: center;
+}
+
+.tab-button-count-inactive {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  color: #1e40af;
+  box-shadow: 0 2px 4px rgba(30, 64, 175, 0.1);
+}
+
+.tab-button-count-active {
+  background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 8px rgba(30, 64, 175, 0.3);
+  transform: scale(1.05);
+}
+
+.tab-button-active-indicator {
+  position: absolute;
+  bottom: -3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 4px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    #ffffff 20%, 
+    #ffffff 80%, 
+    transparent 100%);
+  border-radius: 2px 2px 0 0;
+  animation: tabPulse 2s ease-in-out infinite;
+}
+
+.tab-button-hover-overlay {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.2) 50%, 
+    transparent 100%);
+  transition: left 0.6s ease;
+  z-index: 1;
+}
+
+.tab-button:hover .tab-button-hover-overlay {
+  left: 100%;
+}
+
+@keyframes tabPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: translateX(-50%) scaleX(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: translateX(-50%) scaleX(1.1);
+  }
+}
+
+/* Camera Selector & UI Enhancement Styles - Add this to your App.css */
+
+/* === Upload Progress Bar Styles === */
+.upload-progress-container {
+  width: 100%;
+  height: 8px;
+  background-color: #e5e7eb;
+  border-radius: 9999px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.upload-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+  border-radius: 9999px;
+  transition: width 0.3s ease-in-out;
+  position: relative;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.upload-progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.3) 50%, 
+    transparent 100%);
+  border-radius: 9999px;
+  animation: progressShimmer 2s ease-in-out infinite;
+}
+
+@keyframes progressShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* === Tab Button Styles === */
+.tab-button-container {
+  position: relative;
+  display: inline-block;
+}
+
+.tab-button {
+  position: relative;
+  padding: 20px 32px;
+  border: none;
+  border-radius: 16px 16px 0 0;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  overflow: hidden;
+  min-width: 160px;
+  backdrop-filter: blur(10px);
+  border-bottom: 3px solid transparent;
+}
+
+.tab-button-inactive {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%);
+  color: #64748b;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+  border-bottom-color: #e2e8f0;
+}
+
+.tab-button-active {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 50%, #1e40af 100%);
+  color: #ffffff;
+  box-shadow: 0 8px 25px rgba(37, 99, 235, 0.3);
+  border-bottom-color: #3b82f6;
+  transform: translateY(-2px);
+}
+
+.tab-button:hover:not(.tab-button-active) {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 197, 253, 0.1) 100%);
+  color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.15);
+}
+
+.tab-button-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 2;
+  position: relative;
+}
+
+.tab-button-icon {
+  font-size: 20px;
+  transition: all 0.3s ease;
+}
+
+.tab-button-active .tab-button-icon {
+  transform: scale(1.1);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.tab-button-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.tab-button-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.tab-button-count {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  transition: all 0.3s ease;
+  min-width: 24px;
+  text-align: center;
+}
+
+.tab-button-count-inactive {
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  color: #1e40af;
+  box-shadow: 0 2px 4px rgba(30, 64, 175, 0.1);
+}
+
+.tab-button-count-active {
+  background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 8px rgba(30, 64, 175, 0.3);
+  transform: scale(1.05);
+}
+
+.tab-button-active-indicator {
+  position: absolute;
+  bottom: -3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 4px;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    #ffffff 20%, 
+    #ffffff 80%, 
+    transparent 100%);
+  border-radius: 2px 2px 0 0;
+  animation: tabPulse 2s ease-in-out infinite;
+}
+
+.tab-button-hover-overlay {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.2) 50%, 
+    transparent 100%);
+  transition: left 0.6s ease;
+  z-index: 1;
+}
+
+.tab-button:hover .tab-button-hover-overlay {
+  left: 100%;
+}
+
+@keyframes tabPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: translateX(-50%) scaleX(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: translateX(-50%) scaleX(1.1);
+  }
+}
+
+/* === Summary Cards Styles === */
+.summary-card {
+  position: relative;
+  padding: 0;
+  border-radius: 20px;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.summary-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.summary-card-accuracy {
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+}
+
+.summary-card-matches {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
+}
+
+.summary-card-database {
+  background: linear-gradient(135deg, #eab308 0%, #ca8a04 50%, #a16207 100%);
+}
+
+.summary-card-json {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 50%, #dc2626 100%);
+}
+
+.summary-card-content {
+  position: relative;
+  padding: 28px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 2;
+  height: 140px;
+}
+
+.summary-card-info {
+  flex: 1;
+  color: #ffffff;
+}
+
+.summary-card-label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  opacity: 0.9;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.summary-card-value {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 6px;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover .summary-card-value {
+  transform: scale(1.1);
+  text-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.summary-card-subtitle {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.8;
+  letter-spacing: 0.3px;
+}
+
+.summary-card-icon-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+}
+
+.summary-card-icon {
+  width: 40px;
+  height: 40px;
+  color: rgba(255, 255, 255, 0.9);
+  z-index: 3;
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover .summary-card-icon {
+  transform: rotate(10deg) scale(1.1);
+  color: #ffffff;
+}
+
+.summary-card-icon-glow {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover .summary-card-icon-glow {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.2);
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
+}
+
+.summary-card-bottom-gradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.3) 0%, 
+    rgba(255, 255, 255, 0.8) 50%, 
+    rgba(255, 255, 255, 0.3) 100%);
+  transition: all 0.3s ease;
+}
+
+.summary-card:hover .summary-card-bottom-gradient {
+  height: 8px;
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.5) 0%, 
+    rgba(255, 255, 255, 1) 50%, 
+    rgba(255, 255, 255, 0.5) 100%);
+}
+
+/* === Camera Selector Styles === */
+.camera-selector-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 16px 0;
+}
+
+.camera-buttons-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  background-color: #f3f4f6;
+  padding: 8px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.camera-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.camera-button-default {
+  background-color: #ffffff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.camera-button-default:hover {
+  background-color: #eff6ff;
+  color: #2563eb;
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+}
+
+.camera-button-selected {
+  background-color: #2563eb;
+  color: #ffffff;
+  border: 1px solid #2563eb;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  transform: translateY(-1px);
+}
+
+.camera-icon {
+  width: 14px;
+  height: 14px;
+  margin-bottom: 2px;
+}
+
+.camera-icon-default {
+  color: #9ca3af;
+}
+
+.camera-icon-selected {
+  color: #dbeafe;
+}
+
+.camera-number {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* === Table Camera Button Styles === */
+.camera-table-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.camera-table-button:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.camera-table-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+.camera-table-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.camera-table-button:hover::before {
+  left: 100%;
+}
+
+.camera-table-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  color: #e0e7ff;
+}
+
+.camera-table-text {
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+/* === Popup Close Button Styles === */
+.popup-close-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.popup-close-button:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.popup-close-button:active {
+  transform: scale(0.95);
+}
+
+.popup-close-icon {
+  width: 20px;
+  height: 20px;
+  color: #ffffff;
+}
+
+.popup-footer-close-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
+}
+
+.popup-footer-close-button:hover {
+  background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(107, 114, 128, 0.3);
+}
+
+.popup-footer-close-button:active {
+  transform: translateY(0);
+}
+
+/* === Responsive Design === */
+@media (max-width: 768px) {
+  .upload-progress-container {
+    height: 6px;
+  }
+  
+  .tab-button {
+    padding: 16px 20px;
+    min-width: 120px;
+  }
+  
+  .tab-button-label {
+    font-size: 12px;
+  }
+  
+  .tab-button-icon {
+    font-size: 16px;
+  }
+  
+  .tab-button-count {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+  
+  .summary-card-content {
+    padding: 20px 16px;
+    height: 120px;
+  }
+  
+  .summary-card-value {
+    font-size: 28px;
+  }
+  
+  .summary-card-icon-container {
+    width: 60px;
+    height: 60px;
+  }
+  
+  .summary-card-icon {
+    width: 32px;
+    height: 32px;
+  }
+  
+  .camera-buttons-row {
+    gap: 6px;
+    padding: 6px;
+  }
+  
+  .camera-button {
+    width: 45px;
+    height: 45px;
+  }
+  
+  .camera-icon {
+    width: 12px;
+    height: 12px;
+  }
+  
+  .camera-number {
+    font-size: 10px;
+  }
+  
+  .camera-table-button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  
+  .camera-table-icon {
+    width: 14px;
+    height: 14px;
+    margin-right: 4px;
+  }
+  
+  .popup-close-button {
+    width: 36px;
+    height: 36px;
+  }
+  
+  .popup-close-icon {
+    width: 18px;
+    height: 18px;
+  }
+  
+  .popup-footer-close-button {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+}

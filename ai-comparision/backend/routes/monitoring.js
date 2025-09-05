@@ -29,7 +29,7 @@ router.post('/compare', upload.single('jsonFile'), async (req, res) => {
     }
 
     filePath = req.file.path;
-    processId = req.body.processId; // Extract processId from request
+    processId = req.body.processId;
     
     console.log(`📁 Processing file: ${req.file.originalname} (${req.file.size} bytes)`);
     if (processId) {
@@ -86,7 +86,6 @@ router.post('/compare', upload.single('jsonFile'), async (req, res) => {
     ]);
 
     if (activities.length === 0) {
-      // Clean up progress if there's an error
       if (processId) {
         comparisonService.cleanupProgress(processId);
       }
@@ -98,13 +97,20 @@ router.post('/compare', upload.single('jsonFile'), async (req, res) => {
 
     console.log(`📊 Database loaded: ${activities.length} activities, ${monitoringActivities.length} monitoring records`);
 
+    // Validate that we have some data to compare
+    const jsonActivitiesCount = jsonData.reduce((count, record) => {
+      return count + (record.bounds ? record.bounds.length : 0);
+    }, 0);
+
+    console.log(`📊 JSON contains ${jsonActivitiesCount} activity bounds across ${jsonData.length} records`);
+
     // Process comparison with progress tracking
     console.log('⚙️ Processing comparison logic...');
     const comparisonResults = await comparisonService.processComparison(
       jsonData,
       activities,
       monitoringActivities,
-      processId  // Pass processId for progress tracking
+      processId
     );
 
     // Add metadata to results
@@ -113,6 +119,7 @@ router.post('/compare', upload.single('jsonFile'), async (req, res) => {
       companyId,
       monitoringDate,
       totalRecordsProcessed: jsonData.length,
+      totalJsonBounds: jsonActivitiesCount,
       processingTime: new Date().toISOString()
     };
 
@@ -131,15 +138,22 @@ router.post('/compare', upload.single('jsonFile'), async (req, res) => {
       console.log('✅ Email report sent successfully');
     } catch (emailError) {
       console.error('⚠️ Email failed but continuing:', emailError.message);
-      // Don't fail the entire request if email fails
     }
 
     console.log('🎉 Comparison completed successfully!');
+    
+    // Log final summary
+    console.log(`📊 FINAL RESULTS SUMMARY:
+      - Database Activities: ${comparisonResults.totalDbActivities}
+      - JSON Activities: ${comparisonResults.totalJsonActivities}
+      - Accurate Matches: ${comparisonResults.matchedCount}
+      - Unmatched DB: ${comparisonResults.unmatchedDbCount || 0}
+      - Unmatched JSON: ${comparisonResults.unmatchedJsonCount || 0}
+      - Accuracy: ${comparisonResults.accuracyPercentage}%`);
 
     // Final progress update
     if (processId) {
       comparisonService.updateProgress(processId, 6, 'Comparison completed successfully!');
-      // Clean up after a delay to allow frontend to see completion
       setTimeout(() => comparisonService.cleanupProgress(processId), 5000);
     }
 
@@ -151,8 +165,8 @@ router.post('/compare', upload.single('jsonFile'), async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error processing comparison:', error.message);
+    console.error('❌ Stack trace:', error.stack);
     
-    // Clean up progress on error
     if (processId) {
       comparisonService.cleanupProgress(processId);
     }
@@ -160,7 +174,12 @@ router.post('/compare', upload.single('jsonFile'), async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to process comparison',
-      error: process.env.NODE_ENV !== 'production' ? error.message : 'Internal server error'
+      error: process.env.NODE_ENV !== 'production' ? error.message : 'Internal server error',
+      details: process.env.NODE_ENV !== 'production' ? {
+        stack: error.stack,
+        file: filePath ? req.file.originalname : 'No file',
+        processId: processId || 'None'
+      } : undefined
     });
   } finally {
     // Clean up uploaded file
@@ -184,7 +203,6 @@ router.get('/progress/:processId', (req, res) => {
     const progress = comparisonService.getProgress(processId);
     
     if (progress) {
-      // Calculate additional metrics
       const elapsed = Date.now() - progress.startTime;
       const elapsedSeconds = Math.round(elapsed / 1000);
       
@@ -219,7 +237,7 @@ router.get('/progress/:processId', (req, res) => {
   }
 });
 
-// GET /api/monitoring/active-processes - Get all currently active processes (for debugging)
+// GET /api/monitoring/active-processes - Get all currently active processes
 router.get('/active-processes', (req, res) => {
   try {
     const activeProcesses = comparisonService.getActiveProcesses();
@@ -262,7 +280,60 @@ router.get('/history', async (req, res) => {
   }
 });
 
-// DELETE /api/monitoring/cleanup-progress - Manual cleanup of old progress tracking (optional endpoint)
+// GET /api/monitoring/health - Health check endpoint to verify all services
+router.get('/health', async (req, res) => {
+  try {
+    const health = {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      services: {}
+    };
+
+    // Check database connection
+    try {
+      const dbConnected = await databaseService.testConnection();
+      const tablesValid = await databaseService.validateTables();
+      
+      health.services.database = {
+        connected: dbConnected,
+        tablesValid: tablesValid,
+        status: dbConnected && tablesValid ? 'healthy' : 'degraded'
+      };
+    } catch (error) {
+      health.services.database = {
+        connected: false,
+        tablesValid: false,
+        status: 'unhealthy',
+        error: error.message
+      };
+    }
+
+    // Check comparison service
+    health.services.comparison = {
+      activeProcesses: comparisonService.getActiveProcesses().length,
+      status: 'healthy'
+    };
+
+    // Overall status
+    const allHealthy = Object.values(health.services).every(service => service.status === 'healthy');
+    health.status = allHealthy ? 'healthy' : 'degraded';
+
+    res.json({
+      success: true,
+      data: health
+    });
+
+  } catch (error) {
+    console.error('❌ Error in health check:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Health check failed',
+      error: error.message
+    });
+  }
+});
+
+// DELETE /api/monitoring/cleanup-progress - Manual cleanup of old progress tracking
 router.delete('/cleanup-progress', (req, res) => {
   try {
     const activeProcesses = comparisonService.getActiveProcesses();

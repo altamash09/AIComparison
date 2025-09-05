@@ -4,7 +4,11 @@ class ComparisonService {
     this.activityMapping = {
       'person-employee': [1, 2, 3, 4], // Sales Desk, Stretching, Cleaning, Making Calls
       'person-customer': [5], // Intake
-      'stretching': [2] // Map stretching label to Stretching activity (ID 2)
+      'stretching': [2], // Map stretching label to Stretching activity (ID 2)
+      'cleaning': [3], // Map cleaning label to Cleaning activity (ID 3)
+      'sales': [1], // Map sales label to Sales Desk activity (ID 1)
+      'calls': [4], // Map calls label to Making Calls activity (ID 4),
+      'calling': [4] // Map calls label to Making Calls activity (ID 4)
     };
     
     // Progress tracking storage
@@ -63,7 +67,7 @@ class ComparisonService {
     const trackProgress = !!processId;
     
     try {
-      console.log(`🚀 FOCUSED Processing comparison:
+      console.log(`🚀 Processing comparison:
         - JSON records: ${jsonData.length}
         - Available activities: ${activities.length}
         - Database monitoring activities: ${monitoringActivities.length}
@@ -80,58 +84,60 @@ class ComparisonService {
         this.updateProgress(processId, 1, `Extracting activities from ${jsonData.length} JSON records...`);
       }
       
-      const jsonActivities = this.extractJsonActivitiesOptimized(jsonData, activities);
-      console.log(`⚡ Extracted ${jsonActivities.length} JSON activities in ${Date.now() - startTime}ms`);
+      const allJsonActivities = this.extractJsonActivitiesOptimized(jsonData, activities);
+      console.log(`⚡ Extracted ${allJsonActivities.length} JSON activities in ${Date.now() - startTime}ms`);
       
-      // Step 2: FOCUSED comparison - only matches and unmatches
+      // Step 2: Perform comparison
       if (trackProgress) {
-        this.updateProgress(processId, 2, `Comparing ${jsonActivities.length} JSON vs ${monitoringActivities.length} DB activities...`);
+        this.updateProgress(processId, 2, `Comparing ${allJsonActivities.length} JSON vs ${monitoringActivities.length} DB activities...`);
       }
       
       const comparisonStartTime = Date.now();
-      const { matches, unmatches } = this.performFocusedComparison(
-        jsonActivities, 
+      const { matches, unmatchedDb, unmatchedJson } = this.performDetailedComparison(
+        allJsonActivities, 
         monitoringActivities
       );
-      console.log(`⚡ Focused comparison completed in ${Date.now() - comparisonStartTime}ms`);
+      console.log(`⚡ Comparison completed in ${Date.now() - comparisonStartTime}ms`);
 
-      // Step 3: Calculate simple accuracy
+      // Step 3: Calculate metrics
       if (trackProgress) {
         this.updateProgress(processId, 3, `Calculating accuracy metrics...`);
       }
 
-      // Update results with deduplication info
-      const minuteLevelCount = this.getMinuteLevelActivityCount(jsonActivities);
-      
       const totalDbActivities = monitoringActivities.length;
+      const totalJsonActivities = allJsonActivities.length;
       const matchedActivities = matches.length;
-      const missedActivities = unmatches.length;
       const accuracyPercentage = totalDbActivities > 0 ? ((matchedActivities / totalDbActivities) * 100) : 0;
 
       const totalTime = Date.now() - startTime;
-      console.log(`⚡ FOCUSED RESULTS:
+      console.log(`⚡ RESULTS:
         - Database activities: ${totalDbActivities}
+        - JSON activities: ${totalJsonActivities}
         - ✅ Matched (accurate): ${matchedActivities}
-        - ❌ Unmatched (missed): ${missedActivities}
+        - ❌ Unmatched DB: ${unmatchedDb.length}
+        - ❌ Unmatched JSON: ${unmatchedJson.length}
         - 🎯 Accuracy: ${accuracyPercentage.toFixed(2)}%
         - ⏱️ Processing time: ${totalTime}ms`);
 
       const results = {
-        // FOCUSED RESULTS - only what you need
-        matches,           // Activities found in BOTH JSON and Database (minute-level deduplicated)
-        unmatches,         // Activities in Database but NOT in JSON (missed)
+        // Main comparison results
+        matches,                    // Activities found in BOTH JSON and Database
+        unmatchedDb,               // Activities in Database but NOT in JSON
+        unmatchedJson,             // Activities in JSON but NOT in Database
         
-        // SIMPLE METRICS
+        // All activities for display
+        allDbActivities: monitoringActivities,
+        allJsonActivities: allJsonActivities,
+        
+        // Metrics
         totalDbActivities,
+        totalJsonActivities,
         matchedCount: matchedActivities,
-        unmatchedCount: missedActivities,
+        unmatchedDbCount: unmatchedDb.length,
+        unmatchedJsonCount: unmatchedJson.length,
         accuracyPercentage: parseFloat(accuracyPercentage.toFixed(2)),
         
-        // DEDUPLICATION INFO
-        originalJsonActivitiesCount: jsonActivities.length,  // All activities including second-level duplicates
-        minuteLevelJsonActivitiesCount: minuteLevelCount, // Unique minute-level activities used for comparison
-        
-        // PERFORMANCE INFO
+        // Performance info
         processingTime: new Date().toISOString(),
         performanceMetrics: {
           totalProcessingTimeMs: totalTime,
@@ -147,25 +153,25 @@ class ComparisonService {
       return results;
 
     } catch (error) {
-      console.error('❌ Error in focused comparison:', error);
+      console.error('❌ Error in comparison:', error);
       if (trackProgress) {
         this.cleanupProgress(processId);
       }
-      throw new Error(`Focused comparison failed: ${error.message}`);
+      throw new Error(`Comparison failed: ${error.message}`);
     }
   }
 
-  // OPTIMIZED: Extract JSON activities using efficient data structures
+  // Extract JSON activities with proper activity mapping
   extractJsonActivitiesOptimized(jsonData, activities) {
     const jsonActivities = [];
     
-    // Create activity lookup map for O(1) access instead of O(n) find operations
+    // Create activity lookup map for O(1) access
     const activityLookupMap = new Map();
     activities.forEach(activity => {
       activityLookupMap.set(activity.ActivityID, activity);
     });
     
-    // Process all records in a single pass
+    // Process all records
     for (let recordIndex = 0; recordIndex < jsonData.length; recordIndex++) {
       const record = jsonData[recordIndex];
       
@@ -178,6 +184,20 @@ class ComparisonService {
             
             if (mappedActivityIds.length === 0) {
               console.warn(`⚠️ No mapping found for label: ${bound.label}`);
+              // Still add it to the list for display purposes
+              jsonActivities.push({
+                timestamp: record.timestamp,
+                activityId: null,
+                activityName: `Unmapped: ${bound.label}`,
+                label: bound.label,
+                camera: record.camera,
+                zone: bound.zone,
+                confidence: bound.confidence || 0,
+                image: record.image,
+                recordIndex: recordIndex,
+                boundIndex: boundIndex,
+                isMapped: false
+              });
               continue;
             }
             
@@ -195,7 +215,8 @@ class ComparisonService {
                   confidence: bound.confidence || 0,
                   image: record.image,
                   recordIndex: recordIndex,
-                  boundIndex: boundIndex
+                  boundIndex: boundIndex,
+                  isMapped: true
                 });
               } else {
                 console.warn(`⚠️ Activity not found in database: ID ${activityId}`);
@@ -216,198 +237,96 @@ class ComparisonService {
     return jsonActivities;
   }
 
-  // FOCUSED: Simple comparison - only matches and unmatches
-  performFocusedComparison(jsonActivities, monitoringActivities) {
+  // Detailed comparison that tracks all three categories
+  performDetailedComparison(jsonActivities, monitoringActivities) {
     const matches = [];
-    const unmatches = [];
+    const unmatchedDb = [];
+    const unmatchedJson = [];
 
-    console.log('⚡ Starting FOCUSED comparison (matches vs unmatches only)...');
-    console.log(`📊 Original JSON activities: ${jsonActivities.length}`);
+    console.log('⚡ Starting detailed comparison...');
 
-    // STEP 1: Deduplicate JSON activities by minute-level timestamp for comparison
-    const minuteLevelJsonActivities = this.deduplicateByMinute(jsonActivities);
-    console.log(`📊 Minute-level deduplicated JSON activities: ${minuteLevelJsonActivities.length}`);
-
-    // Create ultra-fast lookup map for minute-level JSON activities
-    // Key format: "timestamp|activityId|camera"
+    // Create lookup map for JSON activities
     const jsonActivityMap = new Map();
-    minuteLevelJsonActivities.forEach(jsonActivity => {
-      const normalizedTimestamp = this.normalizeTimestampToMinute(jsonActivity.timestamp);
-      const key = `${normalizedTimestamp}|${jsonActivity.activityId}|${jsonActivity.camera}`;
-      jsonActivityMap.set(key, jsonActivity);
+    jsonActivities.forEach((jsonActivity, index) => {
+      if (jsonActivity.activityId) { // Only mapped activities
+        const key = `${this.normalizeTimestamp(jsonActivity.timestamp)}|${jsonActivity.activityId}`;
+        if (!jsonActivityMap.has(key)) {
+          jsonActivityMap.set(key, []);
+        }
+        jsonActivityMap.get(key).push({ ...jsonActivity, originalIndex: index });
+      }
     });
 
-    // Check each database activity to see if it exists in minute-level JSON
+    // Track which JSON activities were matched
+    const matchedJsonIndices = new Set();
+
+    // Check each database activity
     monitoringActivities.forEach(dbActivity => {
-      const normalizedTimestamp = this.normalizeTimestampToMinute(dbActivity.Timestamp);
-      const key = `${normalizedTimestamp}|${dbActivity.ActivityID}|${dbActivity.CameraNo}`;
+      const key = `${this.normalizeTimestamp(dbActivity.Timestamp)}|${dbActivity.ActivityID}`;
+      const jsonMatches = jsonActivityMap.get(key);
       
-      const jsonMatch = jsonActivityMap.get(key);
-      
-      if (jsonMatch) {
-        // ✅ MATCH: Activity found in BOTH JSON and Database
+      if (jsonMatches && jsonMatches.length > 0) {
+        // Match found - take the first one
+        const jsonMatch = jsonMatches[0];
+        matchedJsonIndices.add(jsonMatch.originalIndex);
+        
         matches.push({
           timestamp: dbActivity.Timestamp,
           activityId: dbActivity.ActivityID,
           activityName: dbActivity.ActivityName,
-          camera: dbActivity.CameraNo,
+          camera: jsonMatch.camera,
           confidence: jsonMatch.confidence,
           zone: jsonMatch.zone,
+          label: jsonMatch.label,
           dbRecordId: dbActivity.MonitoringActivityID,
           jsonRecordIndex: jsonMatch.recordIndex,
-          matchType: 'ACCURATE_DETECTION',
-          originalJsonCount: jsonMatch.originalCount // How many JSON entries were in this minute
+          matchType: 'ACCURATE_DETECTION'
         });
       } else {
-        // ❌ UNMATCH: Activity in Database but NOT in JSON (missed by AI)
-        unmatches.push({
+        // No match found in JSON
+        unmatchedDb.push({
           timestamp: dbActivity.Timestamp,
           activityId: dbActivity.ActivityID,
           activityName: dbActivity.ActivityName,
           camera: dbActivity.CameraNo,
           dbRecordId: dbActivity.MonitoringActivityID,
-          matchType: 'MISSED_BY_AI'
+          matchType: 'MISSED_BY_JSON'
         });
       }
     });
 
-    console.log(`⚡ FOCUSED Results:
-      - Original JSON activities: ${jsonActivities.length}
-      - Minute-level JSON activities: ${minuteLevelJsonActivities.length}
-      - ✅ Matches (accurate detections): ${matches.length}
-      - ❌ Unmatches (missed by AI): ${unmatches.length}
-      - 🎯 Detection rate: ${monitoringActivities.length > 0 ? ((matches.length / monitoringActivities.length) * 100).toFixed(2) : 0}%`);
-
-    return { matches, unmatches };
-  }
-
-  // NEW: Deduplicate JSON activities by minute-level timestamp
-  deduplicateByMinute(jsonActivities) {
-    const minuteGroups = new Map();
-    
-    // Group activities by minute-level timestamp + activityId + camera
-    jsonActivities.forEach(activity => {
-      const minuteTimestamp = this.normalizeTimestampToMinute(activity.timestamp);
-      const groupKey = `${minuteTimestamp}|${activity.activityId}|${activity.camera}`;
-      
-      if (!minuteGroups.has(groupKey)) {
-        // First occurrence in this minute - keep it and track count
-        minuteGroups.set(groupKey, {
-          ...activity,
-          originalCount: 1,
-          duplicates: []
+    // Find unmatched JSON activities
+    jsonActivities.forEach((jsonActivity, index) => {
+      if (!matchedJsonIndices.has(index)) {
+        unmatchedJson.push({
+          timestamp: jsonActivity.timestamp,
+          activityId: jsonActivity.activityId,
+          activityName: jsonActivity.activityName,
+          camera: jsonActivity.camera,
+          confidence: jsonActivity.confidence,
+          zone: jsonActivity.zone,
+          label: jsonActivity.label,
+          recordIndex: jsonActivity.recordIndex,
+          matchType: jsonActivity.isMapped ? 'JSON_ONLY_DETECTION' : 'UNMAPPED_LABEL'
         });
-      } else {
-        // Duplicate in same minute - increment count and store duplicate
-        const existing = minuteGroups.get(groupKey);
-        existing.originalCount++;
-        existing.duplicates.push(activity);
       }
     });
 
-    // Convert back to array and log deduplication info
-    const deduplicatedActivities = Array.from(minuteGroups.values());
-    
-    // Log deduplication statistics
-    const duplicateStats = deduplicatedActivities
-      .filter(activity => activity.originalCount > 1)
-      .map(activity => ({
-        timestamp: activity.timestamp,
-        activityName: activity.activityName,
-        camera: activity.camera,
-        originalCount: activity.originalCount
-      }));
-    
-    if (duplicateStats.length > 0) {
-      console.log('📊 Minute-level deduplication stats:');
-      duplicateStats.forEach(stat => {
-        console.log(`  • ${stat.activityName} at ${stat.camera} (${stat.timestamp}): ${stat.originalCount} entries in same minute`);
-      });
-    }
+    console.log(`⚡ Detailed Results:
+      - ✅ Matches (in both): ${matches.length}
+      - ❌ Unmatched DB (missed by JSON): ${unmatchedDb.length}
+      - ❌ Unmatched JSON (not in DB): ${unmatchedJson.length}`);
 
-    return deduplicatedActivities;
-  }
-
-  // NEW: Normalize timestamp to minute level (remove seconds)
-  normalizeTimestampToMinute(timestamp) {
-    try {
-      const date = new Date(timestamp);
-      // Set seconds and milliseconds to 0 to get minute-level precision
-      date.setSeconds(0);
-      date.setMilliseconds(0);
-      return date.toISOString();
-    } catch (error) {
-      console.warn(`⚠️ Invalid timestamp: ${timestamp}`);
-      return timestamp;
-    }
-  }
-
-  // NEW: Get minute-level activity count (for metrics)
-  getMinuteLevelActivityCount(jsonActivities) {
-    const minuteGroups = new Map();
-    
-    jsonActivities.forEach(activity => {
-      const minuteTimestamp = this.normalizeTimestampToMinute(activity.timestamp);
-      const groupKey = `${minuteTimestamp}|${activity.activityId}|${activity.camera}`;
-      
-      if (!minuteGroups.has(groupKey)) {
-        minuteGroups.set(groupKey, true);
-      }
-    });
-    
-    return minuteGroups.size;
+    return { matches, unmatchedDb, unmatchedJson };
   }
 
   normalizeTimestamp(timestamp) {
-    // Convert timestamp to consistent format for comparison
     try {
       return new Date(timestamp).toISOString();
     } catch (error) {
       console.warn(`⚠️ Invalid timestamp: ${timestamp}`);
       return timestamp;
     }
-  }
-
-  calculateOverallAccuracy(matches, jsonActivities, dbMissed) {
-    const totalActivities = jsonActivities.length + dbMissed.length;
-    const accuracy = totalActivities > 0 ? (matches.length / totalActivities) * 100 : 0;
-    
-    console.log(`📊 Overall accuracy calculation:
-      - Matches: ${matches.length}
-      - Total activities: ${totalActivities}
-      - Accuracy: ${accuracy.toFixed(2)}%`);
-    
-    return accuracy;
-  }
-
-  // OPTIMIZED: Activity accuracy calculation using efficient grouping
-  calculateActivityAccuracyOptimized(matches, jsonActivities, dbMissed, activities) {
-    const activityAccuracy = {};
-    
-    // Group matches by activity ID for efficient counting
-    const matchesByActivity = new Map();
-    matches.forEach(match => {
-      matchesByActivity.set(match.activityId, (matchesByActivity.get(match.activityId) || 0) + 1);
-    });
-    
-    // Group all activities by activity ID for efficient counting
-    const allActivitiesByActivity = new Map();
-    [...jsonActivities, ...dbMissed].forEach(activity => {
-      allActivitiesByActivity.set(activity.activityId, (allActivitiesByActivity.get(activity.activityId) || 0) + 1);
-    });
-    
-    // Calculate accuracy for each activity type
-    activities.forEach(activity => {
-      const activityMatches = matchesByActivity.get(activity.ActivityID) || 0;
-      const activityTotal = allActivitiesByActivity.get(activity.ActivityID) || 0;
-      
-      const accuracy = activityTotal > 0 ? (activityMatches / activityTotal) * 100 : 0;
-      activityAccuracy[activity.ActivityName] = accuracy;
-      
-      console.log(`📈 ${activity.ActivityName}: ${activityMatches}/${activityTotal} = ${accuracy.toFixed(2)}%`);
-    });
-
-    return activityAccuracy;
   }
 
   // Update activity mapping if needed
