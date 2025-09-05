@@ -80,3 +80,6 @@ jest.config.js
 .eslintcache
 .prettiercache
 tsconfig.tsbuildinfo
+
+# Backup File
+ai-comparision.zip
