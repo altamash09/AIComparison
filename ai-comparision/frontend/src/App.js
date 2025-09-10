@@ -1261,6 +1261,7 @@ const ActivityMonitoringUtility = () => {
             <div className="mb-8">
             <HumanPresenceTimeline 
               jsonData={jsonData}
+              employeeData={comparisonResults?.employeeData || []}
             />
             </div>
           </>
