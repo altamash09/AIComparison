@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Upload, FileText, BarChart3, Database, CheckCircle, XCircle, AlertTriangle, Download, Users, Clock, Camera, RefreshCw, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import './App.css'; 
+import HumanPresenceTimeline from './components/HumanPresenceTimeline'
 
 const ActivityMonitoringUtility = () => {
   const [jsonData, setJsonData] = useState([]);
@@ -90,7 +91,7 @@ const ActivityMonitoringUtility = () => {
     
     return activityCount;
   }, []);
-
+ 
   // Helper functions defined early to avoid undefined errors
   const formatTimestamp = (timestamp) => {
     try {
@@ -1254,6 +1255,13 @@ const ActivityMonitoringUtility = () => {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Human Timeline */}
+            <div className="mb-8">
+            <HumanPresenceTimeline 
+              jsonData={jsonData}
+            />
             </div>
           </>
         )}

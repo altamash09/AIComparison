@@ -71,19 +71,24 @@ router.post('/compare', upload.single('jsonFile'), async (req, res) => {
       });
     }
 
-    // Get database activities and monitoring data
-    console.log('📋 Fetching activities and monitoring data...');
-    
+    // Get database activities, monitoring data, and employee punch data
+    console.log('📋 Fetching activities, monitoring data, and employee punch data...');
+
     // Update progress if processId is provided
     if (processId) {
       comparisonService.initializeProgress(processId);
-      comparisonService.updateProgress(processId, 0, 'Loading database activities and monitoring data...');
+      comparisonService.updateProgress(processId, 0, 'Loading database activities, monitoring data, and employee punch data...');
     }
-    
-    const [activities, monitoringActivities] = await Promise.all([
+
+    console.warn("Starting Employee Punch Data");
+
+    const [activities, monitoringActivities, employeeData] = await Promise.all([
       databaseService.getActivities(),
-      databaseService.getMonitoringActivities(storeId, monitoringDate)
+      databaseService.getMonitoringActivities(storeId, monitoringDate),
+      databaseService.getEmployeePunchData(storeId, monitoringDate)  
     ]);
+
+    console.warn(`👥 Loaded ${employeeData.length} employee punch records`); 
 
     if (activities.length === 0) {
       if (processId) {
@@ -110,7 +115,8 @@ router.post('/compare', upload.single('jsonFile'), async (req, res) => {
       jsonData,
       activities,
       monitoringActivities,
-      processId
+      employeeData,  
+      processId      
     );
 
     // Add metadata to results

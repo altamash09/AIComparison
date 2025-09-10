@@ -62,7 +62,7 @@ class ComparisonService {
     this.progressTracking.delete(processId);
   }
 
-  async processComparison(jsonData, activities, monitoringActivities, processId = null) {
+  async processComparison(jsonData, activities, monitoringActivities, employeeData = null, processId = null) {
     const startTime = Date.now();
     const trackProgress = !!processId;
     
@@ -142,7 +142,8 @@ class ComparisonService {
         performanceMetrics: {
           totalProcessingTimeMs: totalTime,
           activitiesProcessedPerSecond: Math.round((totalDbActivities / totalTime) * 1000)
-        }
+        },
+        employeeData: employeeData || []
       };
 
       // Clean up progress tracking
@@ -183,7 +184,7 @@ class ComparisonService {
             const mappedActivityIds = this.activityMapping[bound.label] || [];
             
             if (mappedActivityIds.length === 0) {
-              console.warn(`⚠️ No mapping found for label: ${bound.label}`);
+              //console.warn(`⚠️ No mapping found for label: ${bound.label}`);
               // Still add it to the list for display purposes
               jsonActivities.push({
                 timestamp: record.timestamp,

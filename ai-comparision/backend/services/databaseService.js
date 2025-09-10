@@ -175,6 +175,40 @@ class DatabaseService {
     }
   }
 
+  async getEmployeePunchData(storeId, date) {
+    try {
+      if (!this.pool) {
+        console.warn('⚠️ Database not connected, returning empty employee data');
+        return [];
+      }
+  
+      const result = await this.pool.request()
+        .input('storeId', sql.Int, storeId)
+        .input('date', sql.VarChar, date)
+        .query(`
+          SELECT 
+            eio.employeeInAndOutID,
+            eio.employeeID,
+            eio.punchInTime,
+            eio.punchOutTime,
+            eio.storeMonitoringID,
+            eio.comments,
+            eio.punchClockID
+          FROM EmployeeInAndOut eio
+          JOIN StoreMonitoring sm ON eio.storeMonitoringID = sm.storeMonitoringID
+          WHERE sm.storeID = @storeId AND sm.MonitoringForDate = @date
+          ORDER BY eio.punchInTime
+        `);
+  
+      console.log(`👥 Loaded ${result.recordset.length} employee punch records`);
+      return result.recordset;
+  
+    } catch (error) {
+      console.error('❌ Error fetching employee punch data:', error.message);
+      return [];
+    }
+  }
+
   async getComparisonHistory(storeId, limit = 10, offset = 0) {
     try {
       if (!this.pool) throw new Error('Database not connected');
